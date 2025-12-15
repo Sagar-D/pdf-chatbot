@@ -1,24 +1,21 @@
 from helpers.document_manager import DocumentProcessor
-from helpers.vectordb_manager import VectorDBManager
-import hashlib
+from helpers.retriever_manager import Retriever
 
-
-file_paths = ["/Users/sagard/Downloads/test_docling.pdf"]
+file_paths = [
+    "/Users/sagard/Downloads/test_docling.pdf",
+    "/Users/sagard/Downloads/iphone17.pdf",
+    "/Users/sagard/Downloads/india_press_note.pdf"
+]
 doc_processor = DocumentProcessor()
-markdowns = doc_processor.store_docs_to_db(file_paths=file_paths)
+doc_processor.store_docs_to_db(file_paths=file_paths)
 
-db_manager = VectorDBManager()
+retriever = Retriever(type="hybrid")
 
-while True :
+while True:
 
     query = input("User Query : ")
-
-    docs = db_manager.fetch_similar_docs(query, 2)
-
-    for doc in docs[0] :
-        print("=="*40)
+    docs = retriever.query_docs(query=query)
+    for doc in docs[:5]:
+        print("==" * 40)
         print(doc)
-        print("=="*40)
-
-
-
+        print("==" * 40)

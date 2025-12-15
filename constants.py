@@ -1,0 +1,2 @@
+VECTOR_RETRIEVER_MAX_DOCS=10
+VECTOR_EMBEDDING_MODEL="sentence-transformers/all-MiniLM-L6-v2"
