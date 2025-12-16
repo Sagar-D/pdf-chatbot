@@ -10,9 +10,6 @@ db_manager = VectorDBManager()
 
 class DocumentProcessor:
 
-    def __init__(self):
-        pass
-
     def _convert_to_markdown(self, file_path: str):
         doc_converter = DocumentConverter()
         result = doc_converter.convert(source=file_path)
@@ -29,8 +26,8 @@ class DocumentProcessor:
     def _generate_hash(self, content: str):
         return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
-    def _doc_exists_in_cache(self, markdown: str):
-        hash = self._generate_hash(markdown)
+    def _doc_exists_in_cache(self, file_content: str):
+        hash = self._generate_hash(file_content)
         if cache_manager.get(hash):
             return True
         return False
@@ -38,12 +35,13 @@ class DocumentProcessor:
     def store_docs_to_db(self, file_paths: str):
 
         for file_path in file_paths:
-            markdown = self._convert_to_markdown(file_path)
-            markdown_hash = self._generate_hash(markdown)
-            if self._doc_exists_in_cache(markdown=markdown):
+            if self._doc_exists_in_cache(file_content=file_path):
                 continue
 
+            markdown = self._convert_to_markdown(file_path)
+            file_content_hash = self._generate_hash(file_path)
             docs = self._chunk_mardown_doc(markdown)
+
             ids = []
             chunks = []
             metadatas = []
@@ -56,14 +54,14 @@ class DocumentProcessor:
                 if headers:
                     page_content = " > ".join(headers) + "\n\n" + doc.page_content
 
-                ids.append(f"{markdown_hash}:{i}")
+                ids.append(f"{file_content_hash}:{i}")
                 chunks.append(page_content)
                 metadatas.append(
-                    {**doc.metadata, "hash": markdown_hash, "file_path": file_path}
+                    {**doc.metadata, "hash": file_content_hash, "file_path": file_path}
                 )
 
             db_manager.add(ids, chunks, metadatas)
             cache_manager.add(
-                markdown_hash,
+                file_content_hash,
                 {"file_path": file_path, "content": markdown, "chunks": chunks},
             )

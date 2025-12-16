@@ -63,10 +63,17 @@ class Retriever:
     def query_docs(self, query: str):
 
         docs = self.retreiver.invoke(input=query)
-
-        reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
+        reranker = CrossEncoder(constants.CROSS_ENCODER_MODEL)
         scores = reranker.predict([(query, doc.page_content) for doc in docs])
         scored_docs = list(zip(docs, scores))
         scored_docs.sort(key=lambda x: x[1], reverse=True)
-        ranked_docs = [doc for doc, score in scored_docs]
-        return ranked_docs[: self.k]
+
+        relevent_docs = []
+        for doc, score in scored_docs:
+            if score > constants.CROSS_ENCODER_RELEVANCE_THRUSHOLD:
+                relevent_docs.append(doc)
+                continue
+            if len(relevent_docs) > int(self.k * 0.2):
+                break
+            relevent_docs.append(doc)
+        return relevent_docs
