@@ -1,7 +1,11 @@
 from langgraph.graph import StateGraph, END
 from typing import TypedDict, Union
 from helpers.llm_manager import get_llm_instance
-from helpers.prompt_manager import QUERY_ELIGIBILITY_PROMPT, ANSWER_USER_QUERY_PROMPT
+from helpers.prompt_manager import (
+    QUERY_ELIGIBILITY_PROMPT,
+    ANSWER_USER_QUERY_PROMPT,
+    QUERY_ENRICHMENT_PROMPT,
+)
 from langchain.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.runnables import RunnableLambda
 from helpers.document_manager import DocumentProcessor
@@ -9,42 +13,61 @@ from helpers.retriever_manager import Retriever
 from pydantic import BaseModel, Field
 
 
-class PDFAgentState(TypedDict):
+class RAGAgentState(TypedDict):
     input: str
     files: list[str]
     messages: list[Union[AIMessage, HumanMessage, ToolMessage]]
-    errors: list[str]
+    error: str
+    enriched_query: str
     context_docs: list[str]
     context: str
+    llm_platform: str
 
 
-class PDFAgent:
+class RAGAgent:
 
     def __init__(self):
-        self.graph = StateGraph(PDFAgentState)
-        self.llm = get_llm_instance()
+        self.graph = StateGraph(RAGAgentState)
         self._compile_graph()
 
-    def _ingest_knowledge(self, state: PDFAgentState) -> PDFAgentState:
+    def _ingest_knowledge(self, state: RAGAgentState) -> RAGAgentState:
         file_paths = state["files"]
         doc_processor = DocumentProcessor()
         doc_processor.store_docs_to_db(file_paths=file_paths)
         return state
 
-    def _get_context(self, state: PDFAgentState) -> PDFAgentState:
+    def _enrich_query_for_retreival(self, state: RAGAgentState) -> RAGAgentState:
+        state["enriched_query"] = ""
+
+        class EnrichedQuery(BaseModel):
+            enriched_query: str = Field(
+                description="Enriched user query for a better (semantic + keyword) RAG retreival"
+            )
+
+        chain = QUERY_ENRICHMENT_PROMPT | get_llm_instance(
+            state["llm_platform"]
+        ).with_structured_output(EnrichedQuery)
+        response: EnrichedQuery = chain.invoke(state)
+        state["enriched_query"] = response.enriched_query.strip()
+        print(f"ENRICHED QUERY : {state['enriched_query']}")
+        print(f"ORIGINAL QUERY : {state['input']}")
+        return state
+
+    def _get_context(self, state: RAGAgentState) -> RAGAgentState:
         self.retriever = Retriever()
-        state["context_docs"] = self.retriever.query_docs(state["input"])
+        state["context_docs"] = self.retriever.query_docs(state["enriched_query"])
         state["context"] = "\n\n".join(
             [doc.page_content for doc in state["context_docs"]]
         )
         return state
 
-    def _is_answerable(self, state: PDFAgentState) -> bool:
+    def _is_answerable(self, state: RAGAgentState) -> bool:
 
         if ("context" not in state) or (state["context"].strip() == ""):
-            state["errors"].append(
-                "Couldn't find any relevent document to answer user query"
+            state["error"] = (
+                "Couldn't find any relevent document to answer user query. Please try with different query"
             )
+            state["messages"].append(AIMessage(state["error"]))
             return False
 
         class IsEligibleResponse(BaseModel):
@@ -52,17 +75,18 @@ class PDFAgent:
                 "Boolean field representing whether the user query can be answered using provided context or not"
             )
 
-        chain = QUERY_ELIGIBILITY_PROMPT | self.llm.with_structured_output(
-            IsEligibleResponse
-        )
-        response = chain.invoke(state)
+        chain = QUERY_ELIGIBILITY_PROMPT | get_llm_instance(
+            state["llm_platform"]
+        ).with_structured_output(IsEligibleResponse)
+        response: IsEligibleResponse = chain.invoke(state)
         if not response.is_answerable:
-            state["errors"].append(
+            state["error"] = (
                 "The user query is not related to any of the documents provided. Please try with differnt query"
             )
+            state["messages"].append(AIMessage(state["error"]))
         return response.is_answerable
 
-    def _answer_user_query(self, state: PDFAgentState) -> PDFAgentState:
+    def _answer_user_query(self, state: RAGAgentState) -> RAGAgentState:
 
         class QueryAnswerResponse(BaseModel):
             reasons: list[str] = Field(
@@ -75,22 +99,24 @@ class PDFAgent:
                 description="Answer to the user query based on provided context."
             )
 
-        chain = ANSWER_USER_QUERY_PROMPT | self.llm.with_structured_output(
-            QueryAnswerResponse
-        )
+        chain = ANSWER_USER_QUERY_PROMPT | get_llm_instance(
+            state["llm_platform"]
+        ).with_structured_output(QueryAnswerResponse)
         response = chain.invoke(state)
         state["messages"].append(AIMessage(content=response.answer))
         return state
 
     def _compile_graph(self):
 
-        graph = StateGraph(PDFAgentState)
+        graph = StateGraph(RAGAgentState)
         graph.add_node("ingest_knowledge", self._ingest_knowledge)
+        graph.add_node("enrich_query", self._enrich_query_for_retreival)
         graph.add_node("get_context", self._get_context)
         graph.add_node("answer_user_query", self._answer_user_query)
 
         graph.set_entry_point("ingest_knowledge")
-        graph.add_edge("ingest_knowledge", "get_context")
+        graph.add_edge("ingest_knowledge", "enrich_query")
+        graph.add_edge("enrich_query", "get_context")
         graph.add_conditional_edges(
             "get_context",
             self._is_answerable,
@@ -100,7 +126,7 @@ class PDFAgent:
         self.app = graph.compile()
         print(self.app.get_graph().draw_ascii())
 
-    def invoke(self, state: PDFAgentState) -> PDFAgentState:
+    def invoke(self, state: RAGAgentState) -> RAGAgentState:
 
         if (
             ("input" not in state)
@@ -114,17 +140,9 @@ class PDFAgent:
             or len(state["files"]) == 0
         ):
             raise ValueError("Missing required attribute 'files' in state object")
-        if (
-            ("messages" not in state)
-            or (type(state["messages"]) != list)
-            or len(state["messages"]) == 0
-        ):
-            state["messages"] = [HumanMessage(state["input"])]
-        if (
-            ("errors" not in state)
-            or (type(state["errors"]) != list)
-            or len(state["errors"]) == 0
-        ):
-            state["errors"] = []
+
+        state["llm_platform"] = state.get("llm_platform") or "ollama"
+        state["messages"] = state.get("messages") or []
+        state["messages"].append(HumanMessage(state["input"]))
 
         return self.app.invoke(state)

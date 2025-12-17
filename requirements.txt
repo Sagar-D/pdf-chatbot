@@ -8,3 +8,4 @@ rank-bm25==0.2.2
 langchain-ollama==1.0.1
 langchain-google-genai==4.0.0
 grandalf==0.8
+gradio==6.1.0
