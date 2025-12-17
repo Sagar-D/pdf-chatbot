@@ -1,7 +1,7 @@
 from langchain_classic.retrievers import EnsembleRetriever
 from langchain_community.retrievers import BM25Retriever
-from langchain_community.vectorstores import Chroma
-from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_chroma import Chroma
+from langchain_huggingface import HuggingFaceEmbeddings
 from typing import Literal
 from sentence_transformers import CrossEncoder
 
@@ -11,6 +11,8 @@ import pdf_chatbot.config as config
 
 
 cache_manager = DocCacheManager()
+reranker = CrossEncoder(config.CROSS_ENCODER_MODEL)
+embedding_fn = HuggingFaceEmbeddings(model_name=config.VECTOR_EMBEDDING_MODEL)
 
 
 class Retriever:
@@ -37,14 +39,12 @@ class Retriever:
 
     def _get_semantic_retriever(self, vector_store: VectorStore = None):
         if not vector_store:
-            vector_store = VectorStore()
+            vector_store = VectorStore.get_instance()
 
         chroma_store = Chroma(
             client=vector_store.db_client,
             collection_name=vector_store.collection_name,
-            embedding_function=HuggingFaceEmbeddings(
-                model_name=config.VECTOR_EMBEDDING_MODEL
-            ),
+            embedding_function=embedding_fn,
         )
         return chroma_store.as_retriever(
             search_type="similarity", search_kwargs={"k": self.k}
@@ -62,20 +62,11 @@ class Retriever:
             weights = [0.6, 0.4]
         return EnsembleRetriever(retrievers=retriever_list, weights=weights)
 
-    def query_docs(self, query: str):
+    def query_docs(self, query: str, k: int = 3):
 
         docs = self.retreiver.invoke(input=query)
-        reranker = CrossEncoder(config.CROSS_ENCODER_MODEL)
         scores = reranker.predict([(query, doc.page_content) for doc in docs])
         scored_docs = list(zip(docs, scores))
         scored_docs.sort(key=lambda x: x[1], reverse=True)
-
-        relevent_docs = []
-        for doc, score in scored_docs:
-            if score > config.CROSS_ENCODER_RELEVANCE_THRUSHOLD:
-                relevent_docs.append(doc)
-                continue
-            if len(relevent_docs) > int(self.k * 0.2):
-                break
-            relevent_docs.append(doc)
-        return relevent_docs
+        relevent_docs = [doc for doc, score in scored_docs if score >= config.CROSS_ENCODER_RELEVANCE_THRUSHOLD]
+        return relevent_docs[:k]

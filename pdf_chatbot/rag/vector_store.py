@@ -7,9 +7,23 @@ import pdf_chatbot.config as config
 
 dotenv.load_dotenv()
 DEFAULT_COLLECTION_NAME = "pdf-chatbot-collection"
+embedding_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
+    model_name=config.VECTOR_EMBEDDING_MODEL
+    )
 
 
 class VectorStore:
+
+    _vector_store_instances = {}
+
+    @classmethod
+    def get_instance(cls, collection_name: str = DEFAULT_COLLECTION_NAME):
+
+        collection_name = collection_name.strip() or DEFAULT_COLLECTION_NAME
+
+        if collection_name not in cls._vector_store_instances:
+            cls._vector_store_instances[collection_name] = cls(collection_name)
+        return cls._vector_store_instances[collection_name]
 
     def __init__(self, collection_name: str = ""):
 
@@ -18,11 +32,7 @@ class VectorStore:
 
         self.db_client = Client()
         self.collection_name = collection_name.strip()
-        self.embedding_function = (
-            embedding_functions.SentenceTransformerEmbeddingFunction(
-                model_name=config.VECTOR_EMBEDDING_MODEL
-            )
-        )
+        self.embedding_function = embedding_fn
         self.collection = self.db_client.get_or_create_collection(
             self.collection_name,
             embedding_function=self.embedding_function,

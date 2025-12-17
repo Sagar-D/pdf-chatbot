@@ -5,7 +5,7 @@ from pdf_chatbot.rag.vector_store import VectorStore
 import hashlib
 
 cache_manager = DocCacheManager()
-vector_store = VectorStore()
+vector_store = VectorStore.get_instance()
 
 
 class DocumentProcessor:
