@@ -1,9 +1,9 @@
-from rag_agent import RAGAgent, RAGAgentState
+from pdf_chatbot.rag.rag_agent import RAGAgent, RAGAgentState
+from langchain.messages import AIMessage, HumanMessage
 from typing import Union
 import gradio as gr
-from langchain.messages import AIMessage, HumanMessage
 
-class ChatInterface:
+class ChatHandler:
 
     def __init__(self):
         self.agent = RAGAgent()

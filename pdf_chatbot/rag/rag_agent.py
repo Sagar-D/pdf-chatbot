@@ -1,16 +1,12 @@
 from langgraph.graph import StateGraph, END
-from typing import TypedDict, Union
-from helpers.llm_manager import get_llm_instance
-from helpers.prompt_manager import (
-    QUERY_ELIGIBILITY_PROMPT,
-    ANSWER_USER_QUERY_PROMPT,
-    QUERY_ENRICHMENT_PROMPT,
-)
 from langchain.messages import AIMessage, HumanMessage, ToolMessage
-from langchain_core.runnables import RunnableLambda
-from helpers.document_manager import DocumentProcessor
-from helpers.retriever_manager import Retriever
 from pydantic import BaseModel, Field
+from typing import TypedDict, Union
+
+import pdf_chatbot.llm.prompt_templates as PromptTemplates
+from pdf_chatbot.llm.model_manager import get_llm_instance
+from pdf_chatbot.documents.document_processor import DocumentProcessor
+from pdf_chatbot.rag.retriever import Retriever
 
 
 class RAGAgentState(TypedDict):
@@ -44,7 +40,7 @@ class RAGAgent:
                 description="Enriched user query for a better (semantic + keyword) RAG retreival"
             )
 
-        chain = QUERY_ENRICHMENT_PROMPT | get_llm_instance(
+        chain = PromptTemplates.QUERY_ENRICHMENT_PROMPT | get_llm_instance(
             state["llm_platform"]
         ).with_structured_output(EnrichedQuery)
         response: EnrichedQuery = chain.invoke(state)
@@ -75,7 +71,7 @@ class RAGAgent:
                 "Boolean field representing whether the user query can be answered using provided context or not"
             )
 
-        chain = QUERY_ELIGIBILITY_PROMPT | get_llm_instance(
+        chain = PromptTemplates.QUERY_ELIGIBILITY_PROMPT | get_llm_instance(
             state["llm_platform"]
         ).with_structured_output(IsEligibleResponse)
         response: IsEligibleResponse = chain.invoke(state)
@@ -99,7 +95,7 @@ class RAGAgent:
                 description="Answer to the user query based on provided context."
             )
 
-        chain = ANSWER_USER_QUERY_PROMPT | get_llm_instance(
+        chain = PromptTemplates.ANSWER_USER_QUERY_PROMPT | get_llm_instance(
             state["llm_platform"]
         ).with_structured_output(QueryAnswerResponse)
         response = chain.invoke(state)

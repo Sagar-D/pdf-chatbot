@@ -1,16 +1,16 @@
 import gradio as gr
-import constants
+import pdf_chatbot.config as config
 
 
-def create_graido_chat_interface(fn: function):
+def create_graido_chat_interface(fn):
 
     with gr.Blocks() as app:
         chatbot = gr.Chatbot(height=450)
 
         with gr.Row():
             llm_platform = gr.Dropdown(
-                choices=constants.LLM_PLATFORM_CHOICES,
-                value=constants.LLM_PLATFORM_CHOICES[0],
+                choices=config.LLM_PLATFORM_CHOICES,
+                value=config.LLM_PLATFORM_CHOICES[0],
                 type="value",
                 multiselect=False,
             )

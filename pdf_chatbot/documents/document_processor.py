@@ -1,11 +1,11 @@
 from docling.document_converter import DocumentConverter
 from langchain_text_splitters import MarkdownHeaderTextSplitter
-from helpers.doc_cache_manager import DocCacheManager
-from helpers.vectordb_manager import VectorDBManager
+from pdf_chatbot.documents.cache_manager import DocCacheManager
+from pdf_chatbot.rag.vector_store import VectorStore
 import hashlib
 
 cache_manager = DocCacheManager()
-db_manager = VectorDBManager()
+vector_store = VectorStore()
 
 
 class DocumentProcessor:
@@ -60,7 +60,7 @@ class DocumentProcessor:
                     {**doc.metadata, "hash": file_content_hash, "file_path": file_path}
                 )
 
-            db_manager.add(ids, chunks, metadatas)
+            vector_store.add(ids, chunks, metadatas)
             cache_manager.add(
                 file_content_hash,
                 {"file_path": file_path, "content": markdown, "chunks": chunks},
