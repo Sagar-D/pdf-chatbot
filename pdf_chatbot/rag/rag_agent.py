@@ -6,7 +6,6 @@ from typing import TypedDict, Union
 
 import pdf_chatbot.llm.prompt_templates as PromptTemplates
 from pdf_chatbot.llm.model_manager import get_llm_instance
-from pdf_chatbot.documents.document_processor import DocumentProcessor
 from pdf_chatbot.rag.retriever import Retriever
 import pdf_chatbot.config as config
 
@@ -19,6 +18,7 @@ class RAGAgentState(TypedDict):
     context_docs: list[str]
     context: str
     llm_platform: str
+    file_hash_list: list[str]
 
 
 class RAGAgent:
@@ -46,8 +46,11 @@ class RAGAgent:
         return state
 
     def _get_context(self, state: RAGAgentState) -> RAGAgentState:
-        self.retriever = Retriever()
-        state["context_docs"] = self.retriever.query_docs(state["enriched_query"], k=3)
+        self.retriever = Retriever(file_hash_list=state["file_hash_list"])
+        metadata_filter = {"file_hash": {"$in": state["file_hash_list"]}}
+        state["context_docs"] = self.retriever.query_docs(
+            query=state["enriched_query"], metadata_filter=metadata_filter, k=3
+        )
         state["context"] = "\n\n".join(
             [doc.page_content for doc in state["context_docs"]]
         )

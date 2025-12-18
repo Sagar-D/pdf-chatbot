@@ -1,5 +1,6 @@
 LOOKUP = {}
 
+
 class DocCacheManager:
 
     def add(self, key: str, value: dict):
@@ -10,9 +11,10 @@ class DocCacheManager:
             return LOOKUP[key]
         return None
 
-    def get_all_chunks(self):
+    def get_all_chunks(self, file_hash_list: list[str]):
+        file_hash_list = file_hash_list or LOOKUP.keys()
         chunks = []
         for key, val in LOOKUP.items():
-            chunks.extend(val["chunks"])
+            if key in file_hash_list:
+                chunks.extend(val["chunks"])
         return chunks
-

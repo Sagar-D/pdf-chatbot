@@ -13,6 +13,7 @@ vector_store = VectorStore.get_instance()
 
 doc_converter = DocumentConverter()
 
+
 class DocumentProcessor:
 
     def _convert_to_markdown(self, file_content: bytes):
@@ -30,25 +31,29 @@ class DocumentProcessor:
         chunks = splitter.split_text(markdown)
         return chunks
 
-    def _generate_hash(self, content: Union[bytes,str]):
-        if type(content) == str :
+    def generate_hash(self, content: Union[bytes, str]):
+        if type(content) == str:
             content = content.encode("utf-8")
         return hashlib.sha256(content).hexdigest()
 
     def _doc_exists_in_cache(self, file_content: bytes):
-        hash = self._generate_hash(file_content)
+        hash = self.generate_hash(file_content)
         if cache_manager.get(hash):
             return True
         return False
 
     def store_docs_to_db(self, files: list[bytes]):
 
+        file_hash_list = []
+
         for file in files:
+            file_content_hash = self.generate_hash(file)
+            file_hash_list.append(file_content_hash)
+
             if self._doc_exists_in_cache(file_content=file):
                 continue
 
             markdown = self._convert_to_markdown(file)
-            file_content_hash = self._generate_hash(file)
             docs = self._chunk_mardown_doc(markdown)
 
             ids = []
@@ -65,12 +70,11 @@ class DocumentProcessor:
 
                 ids.append(f"{file_content_hash}:{i}")
                 chunks.append(page_content)
-                metadatas.append(
-                    {**doc.metadata, "file_hash": file_content_hash}
-                )
+                metadatas.append({**doc.metadata, "file_hash": file_content_hash})
 
             vector_store.add(ids, chunks, metadatas)
             cache_manager.add(
                 file_content_hash,
                 {"file": file, "content": markdown, "chunks": chunks},
             )
+        return file_hash_list

@@ -25,9 +25,7 @@ class ChatHandler:
             gr.Warning("No PDF file uploaded. Please attach a PDF file")
             return state, self._generate_gradio_chat(state["messages"])
 
-        if len(files) > 0:
-            self._ingest_knowledge(files)
-
+        state["file_hash_list"] = self._ingest_knowledge(files)
         state = self.agent.invoke(state)
         return state, self._generate_gradio_chat(state["messages"])
 
@@ -47,4 +45,4 @@ class ChatHandler:
         return history
 
     def _ingest_knowledge(self, files: list[bytes]):
-        DocumentProcessor().store_docs_to_db(files)
+        return DocumentProcessor().store_docs_to_db(files)
