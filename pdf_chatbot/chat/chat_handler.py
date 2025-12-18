@@ -3,34 +3,33 @@ from pdf_chatbot.documents.document_processor import DocumentProcessor
 from langchain.messages import AIMessage, HumanMessage
 from typing import Union
 import gradio as gr
+from pdf_chatbot import config
 
 
 class ChatHandler:
 
     def __init__(self):
         self.agent = RAGAgent()
-        self.agent_state: RAGAgentState = {"input": "", "messages": []}
 
-    def chat(self, query: str, files: list[bytes], llm_platform: str):
+    def chat(self, state: dict, files: list[bytes]):
 
-        query = query or ""
+        state = state or {}
         files = files or []
-        llm_platform = llm_platform or self.agent_state.get("llm_platform") or "ollama"
+        state["messages"] = state.get("messages") or []
+        state["llm_platform"] = state.get("llm_platform") or config.LLM_PLATFORMS[0]
 
-        if query.strip() == "":
+        if (not state.get("input")) or state.get("input").strip() == "":
             gr.Warning("Please enter a User query in the input box")
-            return self._generate_gradio_chat(self.agent_state["messages"])
+            return state, self._generate_gradio_chat(state["messages"])
         if len(files) == 0:
             gr.Warning("No PDF file uploaded. Please attach a PDF file")
-            return self._generate_gradio_chat(self.agent_state["messages"])
+            return state, self._generate_gradio_chat(state["messages"])
 
         if len(files) > 0:
             self._ingest_knowledge(files)
 
-        self.agent_state["input"] = query
-        self.agent_state["llm_platform"] = llm_platform
-        self.agent_state = self.agent.invoke(self.agent_state)
-        return self._generate_gradio_chat(self.agent_state["messages"])
+        state = self.agent.invoke(state)
+        return state, self._generate_gradio_chat(state["messages"])
 
     def _generate_gradio_chat(
         self, messages: list[Union[AIMessage, HumanMessage]]
@@ -47,5 +46,5 @@ class ChatHandler:
             history.append({"role": role, "content": message.content})
         return history
 
-    def _ingest_knowledge(self, files:list[bytes]):
+    def _ingest_knowledge(self, files: list[bytes]):
         DocumentProcessor().store_docs_to_db(files)

@@ -2,9 +2,14 @@ import gradio as gr
 import pdf_chatbot.config as config
 
 
-def _disable_inputs(msg: str):
+def _gradio_pre_processing(state: dict, msg: str, llm_platform: str):
+    state = state or {}
+    if msg:
+        state["input"] = msg
+    if llm_platform:
+        state["llm_platform"] = llm_platform
     return (
-        msg,
+        state,
         gr.update(interactive=False),
         gr.update(
             value="",
@@ -16,7 +21,7 @@ def _disable_inputs(msg: str):
     )
 
 
-def _enable_inputs():
+def _gradia_post_processing():
     return (
         gr.update(interactive=True),
         gr.update(value="", placeholder="Type your query here...", interactive=True),
@@ -25,11 +30,11 @@ def _enable_inputs():
     )
 
 
-def create_gradio_chat_interface(fn):
+def create_gradio_chat_interface(chat_fn):
 
     with gr.Blocks() as app:
         chatbot = gr.Chatbot(height=450)
-        msg_state = gr.State()
+        state = gr.State({})
 
         with gr.Row():
             llm_platform = gr.Dropdown(
@@ -45,18 +50,22 @@ def create_gradio_chat_interface(fn):
             send = gr.Button("Send", scale=1)
 
         send.click(
-            fn=_disable_inputs,
-            inputs=[msg],
-            outputs=[msg_state, llm_platform, msg, files, send],
-        ).then(fn=fn, inputs=[msg_state, files, llm_platform], outputs=[chatbot]).then(
-            fn=_enable_inputs, inputs=[], outputs=[llm_platform, msg, files, send]
+            fn=_gradio_pre_processing,
+            inputs=[state, msg, llm_platform],
+            outputs=[state, llm_platform, msg, files, send],
+        ).then(fn=chat_fn, inputs=[state, files], outputs=[state, chatbot]).then(
+            fn=_gradia_post_processing,
+            inputs=[],
+            outputs=[llm_platform, msg, files, send],
         )
         msg.submit(
-            fn=_disable_inputs,
-            inputs=[msg],
-            outputs=[msg_state, llm_platform, msg, files, send],
-        ).then(fn=fn, inputs=[msg_state, files, llm_platform], outputs=[chatbot]).then(
-            fn=_enable_inputs, inputs=[], outputs=[llm_platform, msg, files, send]
+            fn=_gradio_pre_processing,
+            inputs=[state, msg, llm_platform],
+            outputs=[state, llm_platform, msg, files, send],
+        ).then(fn=chat_fn, inputs=[state, files], outputs=[state, chatbot]).then(
+            fn=_gradia_post_processing,
+            inputs=[],
+            outputs=[llm_platform, msg, files, send],
         )
 
     return app
