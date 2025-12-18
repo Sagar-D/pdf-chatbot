@@ -1,18 +1,25 @@
 from docling.document_converter import DocumentConverter
+from docling.datamodel.base_models import DocumentStream
 from langchain_text_splitters import MarkdownHeaderTextSplitter
 from pdf_chatbot.documents.cache_manager import DocCacheManager
 from pdf_chatbot.rag.vector_store import VectorStore
 import hashlib
+from typing import Union
+from io import BytesIO
 
 cache_manager = DocCacheManager()
 vector_store = VectorStore.get_instance()
+vector_store = VectorStore.get_instance()
 
+doc_converter = DocumentConverter()
 
 class DocumentProcessor:
 
-    def _convert_to_markdown(self, file_path: str):
-        doc_converter = DocumentConverter()
-        result = doc_converter.convert(source=file_path)
+    def _convert_to_markdown(self, file_content: bytes):
+        pdf_file = BytesIO(file_content)
+        pdf_file.name = "sample.pdf"
+        doc = DocumentStream(name=pdf_file.name, stream=pdf_file)
+        result = doc_converter.convert(source=doc)
         markdown = result.document.export_to_markdown()
         return markdown
 
@@ -23,23 +30,25 @@ class DocumentProcessor:
         chunks = splitter.split_text(markdown)
         return chunks
 
-    def _generate_hash(self, content: str):
-        return hashlib.sha256(content.encode("utf-8")).hexdigest()
+    def _generate_hash(self, content: Union[bytes,str]):
+        if type(content) == str :
+            content = content.encode("utf-8")
+        return hashlib.sha256(content).hexdigest()
 
-    def _doc_exists_in_cache(self, file_content: str):
+    def _doc_exists_in_cache(self, file_content: bytes):
         hash = self._generate_hash(file_content)
         if cache_manager.get(hash):
             return True
         return False
 
-    def store_docs_to_db(self, file_paths: str):
+    def store_docs_to_db(self, files: list[bytes]):
 
-        for file_path in file_paths:
-            if self._doc_exists_in_cache(file_content=file_path):
+        for file in files:
+            if self._doc_exists_in_cache(file_content=file):
                 continue
 
-            markdown = self._convert_to_markdown(file_path)
-            file_content_hash = self._generate_hash(file_path)
+            markdown = self._convert_to_markdown(file)
+            file_content_hash = self._generate_hash(file)
             docs = self._chunk_mardown_doc(markdown)
 
             ids = []
@@ -57,11 +66,11 @@ class DocumentProcessor:
                 ids.append(f"{file_content_hash}:{i}")
                 chunks.append(page_content)
                 metadatas.append(
-                    {**doc.metadata, "hash": file_content_hash, "file_path": file_path}
+                    {**doc.metadata, "file_hash": file_content_hash}
                 )
 
             vector_store.add(ids, chunks, metadatas)
             cache_manager.add(
                 file_content_hash,
-                {"file_path": file_path, "content": markdown, "chunks": chunks},
+                {"file": file, "content": markdown, "chunks": chunks},
             )

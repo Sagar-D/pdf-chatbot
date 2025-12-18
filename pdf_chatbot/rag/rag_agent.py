@@ -13,7 +13,6 @@ import pdf_chatbot.config as config
 
 class RAGAgentState(TypedDict):
     input: str
-    files: list[str]
     messages: list[Union[AIMessage, HumanMessage, ToolMessage]]
     error: str
     enriched_query: str
@@ -27,11 +26,6 @@ class RAGAgent:
     def __init__(self):
         self.graph = StateGraph(RAGAgentState)
         self._compile_graph()
-
-    def _ingest_knowledge(self, state: RAGAgentState) -> RAGAgentState:
-        file_paths = state["files"]
-        DocumentProcessor().store_docs_to_db(file_paths=file_paths)
-        return state
 
     def _enrich_query_for_retreival(self, state: RAGAgentState) -> RAGAgentState:
 
@@ -110,13 +104,11 @@ class RAGAgent:
     def _compile_graph(self):
 
         graph = StateGraph(RAGAgentState)
-        graph.add_node("ingest_knowledge", self._ingest_knowledge)
         graph.add_node("enrich_query", self._enrich_query_for_retreival)
         graph.add_node("get_context", self._get_context)
         graph.add_node("respond_to_user_query", self._respond_to_user_query)
 
-        graph.set_entry_point("ingest_knowledge")
-        graph.add_edge("ingest_knowledge", "enrich_query")
+        graph.set_entry_point("enrich_query")
         graph.add_edge("enrich_query", "get_context")
         graph.add_conditional_edges(
             "get_context",
@@ -135,12 +127,6 @@ class RAGAgent:
             or state["input"].strip() == ""
         ):
             raise ValueError("Missing required attribute 'input' in state object")
-        if (
-            ("files" not in state)
-            or (type(state["files"]) != list)
-            or len(state["files"]) == 0
-        ):
-            raise ValueError("Missing required attribute 'files' in state object")
 
         state["llm_platform"] = state.get("llm_platform") or "ollama"
         state["messages"] = state.get("messages") or []

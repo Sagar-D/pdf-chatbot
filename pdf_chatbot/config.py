@@ -14,5 +14,5 @@ RESPONSE_GENERATOR_MODEL = {"ollama": "qwen3:8b", "gemini": "gemini-2.0-flash"}
 
 ## RAG Agent configs
 PROMPT_ENRICHMENT_FEATURE_ENABLED=False
-IS_CONVERSATIONAL_RAG=True
+IS_CONVERSATIONAL_RAG=False
 
