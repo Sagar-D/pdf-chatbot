@@ -1,15 +1,15 @@
-from pdf_chatbot.rag.rag_agent import RAGAgent, RAGAgentState
-from pdf_chatbot.documents.document_processor import DocumentProcessor
+from pdf_chatbot.rag.rag_agent import RAGAgent
+from pdf_chatbot.documents.document_processor import save_user_documents
 from langchain.messages import AIMessage, HumanMessage
 from typing import Union
 import gradio as gr
 from pdf_chatbot import config
 
-
 class ChatHandler:
 
-    def __init__(self):
+    def __init__(self, session: dict):
         self.agent = RAGAgent()
+        self.session = session or {}
 
     def chat(self, state: dict, files: list[bytes]):
 
@@ -17,6 +17,7 @@ class ChatHandler:
         files = files or []
         state["messages"] = state.get("messages") or []
         state["llm_platform"] = state.get("llm_platform") or config.LLM_PLATFORMS[0]
+        state["user_id"] = self.session.get("user_id")
 
         if (not state.get("input")) or state.get("input").strip() == "":
             gr.Warning("Please enter a User query in the input box")
@@ -25,7 +26,7 @@ class ChatHandler:
             gr.Warning("No PDF file uploaded. Please attach a PDF file")
             return state, self._generate_gradio_chat(state["messages"])
 
-        state["file_hash_list"] = self._ingest_knowledge(files)
+        state["active_documents_hash_list"] = self._ingest_knowledge(files)
         state = self.agent.invoke(state)
         return state, self._generate_gradio_chat(state["messages"])
 
@@ -45,4 +46,4 @@ class ChatHandler:
         return history
 
     def _ingest_knowledge(self, files: list[bytes]):
-        return DocumentProcessor().store_docs_to_db(files)
+        return save_user_documents(files=files, user_id=self.session.get("user_id"))

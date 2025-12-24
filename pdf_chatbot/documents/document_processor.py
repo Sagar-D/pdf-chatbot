@@ -1,80 +1,73 @@
 from docling.document_converter import DocumentConverter
 from docling.datamodel.base_models import DocumentStream
 from langchain_text_splitters import MarkdownHeaderTextSplitter
-from pdf_chatbot.documents.cache_manager import DocCacheManager
 from pdf_chatbot.rag.vector_store import VectorStore
+from langchain_core.documents import Document
 import hashlib
 from typing import Union
 from io import BytesIO
 
-cache_manager = DocCacheManager()
-vector_store = VectorStore.get_instance()
-vector_store = VectorStore.get_instance()
-
+vector_store: VectorStore = VectorStore.get_instance()
 doc_converter = DocumentConverter()
 
 
-class DocumentProcessor:
+def _convert_to_markdown(file_content: bytes) -> str:
+    pdf_file = BytesIO(file_content)
+    pdf_file.name = "sample.pdf"
+    doc = DocumentStream(name=pdf_file.name, stream=pdf_file)
+    result = doc_converter.convert(source=doc)
+    markdown = result.document.export_to_markdown()
+    return markdown
 
-    def _convert_to_markdown(self, file_content: bytes):
-        pdf_file = BytesIO(file_content)
-        pdf_file.name = "sample.pdf"
-        doc = DocumentStream(name=pdf_file.name, stream=pdf_file)
-        result = doc_converter.convert(source=doc)
-        markdown = result.document.export_to_markdown()
-        return markdown
 
-    def _chunk_mardown_doc(self, markdown: str):
-        splitter = MarkdownHeaderTextSplitter(
-            headers_to_split_on=[("#", "h1"), ("##", "h2")]
+def _chunk_mardown_doc(markdown: str) -> list[Document]:
+    splitter = MarkdownHeaderTextSplitter(
+        headers_to_split_on=[("#", "h1"), ("##", "h2")]
+    )
+    chunks = splitter.split_text(markdown)
+    for chunk in chunks:
+        headers = [chunk.metadata[key] for key in ["h1", "h2"] if key in chunk.metadata]
+        if headers:
+            chunk.page_content = (" > ".join(headers)) + "\n\n" + chunk.page_content
+    return chunks
+
+
+def generate_hash(content: Union[bytes, str]) -> str:
+    if type(content) == str:
+        content = content.encode("utf-8")
+    return hashlib.sha256(content).hexdigest()
+
+
+def save_user_documents(files: list[bytes], user_id: int) -> list[str]:
+    document_hash_list = []
+    for file in files:
+        document_hash_id = generate_hash(content=file)
+        document_hash_list.append(document_hash_id)
+
+        document_already_processed = vector_store.document_exists(
+            metadata_filter={
+                "$and": [{"user_id": user_id}, {"document_hash_id": document_hash_id}]
+            }
         )
-        chunks = splitter.split_text(markdown)
-        return chunks
+        if document_already_processed:
+            continue
 
-    def generate_hash(self, content: Union[bytes, str]):
-        if type(content) == str:
-            content = content.encode("utf-8")
-        return hashlib.sha256(content).hexdigest()
+        markdown = _convert_to_markdown(file)
+        chunks: list[Document] = _chunk_mardown_doc(markdown)
 
-    def _doc_exists_in_cache(self, file_content: bytes):
-        hash = self.generate_hash(file_content)
-        if cache_manager.get(hash):
-            return True
-        return False
-
-    def store_docs_to_db(self, files: list[bytes]):
-
-        file_hash_list = []
-
-        for file in files:
-            file_content_hash = self.generate_hash(file)
-            file_hash_list.append(file_content_hash)
-
-            if self._doc_exists_in_cache(file_content=file):
-                continue
-
-            markdown = self._convert_to_markdown(file)
-            docs = self._chunk_mardown_doc(markdown)
-
-            ids = []
-            chunks = []
-            metadatas = []
-            for i, doc in enumerate(docs):
-                headers = []
-                page_content = doc.page_content
-                for key in ["h1", "h2"]:
-                    if key in doc.metadata:
-                        headers.append(doc.metadata[key])
-                if headers:
-                    page_content = " > ".join(headers) + "\n\n" + doc.page_content
-
-                ids.append(f"{file_content_hash}:{i}")
-                chunks.append(page_content)
-                metadatas.append({**doc.metadata, "file_hash": file_content_hash})
-
-            vector_store.add(ids, chunks, metadatas)
-            cache_manager.add(
-                file_content_hash,
-                {"file": file, "content": markdown, "chunks": chunks},
+        ids, page_contents, metadatas = [], [], []
+        for i, chunk in enumerate(chunks):
+            ids.append(f"{document_hash_id}:{i}")
+            page_contents.append(chunk.page_content)
+            metadatas.append(
+                {
+                    **chunk.metadata,
+                    "user_id": user_id,
+                    "document_hash_id": document_hash_id,
+                    "chunk_id": f"{document_hash_id}:{i}",
+                    "source_file": "NA",  # To be updated when we start saving user files on server
+                    "chunk_content": chunk.page_content,
+                }
             )
-        return file_hash_list
+        vector_store.add(ids, page_contents, metadatas)
+    return document_hash_list

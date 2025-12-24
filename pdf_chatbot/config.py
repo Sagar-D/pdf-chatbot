@@ -1,6 +1,8 @@
 # RAG configs
 VECTOR_EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 VECTOR_RETRIEVER_MAX_DOCS = 10
+DEFAULT_VECTOR_DB_PATH=".chroma/"
+DEFAULT_VECTOR_COLLECTION_NAME = "pdf-chatbot-collection"
 CROSS_ENCODER_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 CROSS_ENCODER_RELEVANCE_THRUSHOLD = 0
 

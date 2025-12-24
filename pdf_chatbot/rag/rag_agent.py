@@ -6,19 +6,20 @@ from typing import TypedDict, Union
 
 import pdf_chatbot.llm.prompt_templates as PromptTemplates
 from pdf_chatbot.llm.model_manager import get_llm_instance
-from pdf_chatbot.rag.retriever import Retriever
+from pdf_chatbot.rag.retriever import ScopedHybridRetriever
 import pdf_chatbot.config as config
 
 
 class RAGAgentState(TypedDict):
+    user_id: str
+    llm_platform: str
     input: str
     messages: list[Union[AIMessage, HumanMessage, ToolMessage]]
-    error: str
     enriched_query: str
+    active_documents_hash_list: list[str]
     context_docs: list[str]
     context: str
-    llm_platform: str
-    file_hash_list: list[str]
+    error: str
 
 
 class RAGAgent:
@@ -46,10 +47,15 @@ class RAGAgent:
         return state
 
     def _get_context(self, state: RAGAgentState) -> RAGAgentState:
-        self.retriever = Retriever(file_hash_list=state["file_hash_list"])
-        metadata_filter = {"file_hash": {"$in": state["file_hash_list"]}}
+        metadata_filter = {
+            "$and": [
+                {"user_id": state["user_id"]},
+                {"document_hash_id": {"$in": state["active_documents_hash_list"]}},
+            ]
+        }
+        self.retriever = ScopedHybridRetriever(metadata_filter=metadata_filter)
         state["context_docs"] = self.retriever.query_docs(
-            query=state["enriched_query"], metadata_filter=metadata_filter, k=3
+            query=state["enriched_query"], k=3
         )
         state["context"] = "\n\n".join(
             [doc.page_content for doc in state["context_docs"]]
@@ -121,6 +127,7 @@ class RAGAgent:
         graph.add_edge("respond_to_user_query", END)
         self.app = graph.compile()
         print(self.app.get_graph().draw_ascii())
+        self.app.get_graph().draw_mermaid_png(output_file_path="output.png")
 
     def invoke(self, state: RAGAgentState) -> RAGAgentState:
 
@@ -131,8 +138,14 @@ class RAGAgent:
         ):
             raise ValueError("Missing required attribute 'input' in state object")
 
+        if "user_id" not in state or type(state["user_id"]) != int:
+            raise ValueError(
+                "Missing or Invalid required attribute 'user_id' in state object"
+            )
+
         state["llm_platform"] = state.get("llm_platform") or "ollama"
         state["messages"] = state.get("messages") or []
         state["messages"].append(HumanMessage(state["input"]))
+        state["user_id"] = state.get("user_id") or ""
 
         return self.app.invoke(state)
