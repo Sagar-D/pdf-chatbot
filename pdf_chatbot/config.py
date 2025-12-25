@@ -20,3 +20,4 @@ IS_CONVERSATIONAL_RAG=False
 
 #Relational Database
 RELATIONAL_DB_NAME="accounts.sqlite3"
+CHAT_HISTORY_ROOT_FOLDER=".chat_history/"

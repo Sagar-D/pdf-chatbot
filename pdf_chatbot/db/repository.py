@@ -2,32 +2,44 @@ import sqlite3
 import config
 
 
-def create_account(username: str, password_hash: str) -> int:
+def insert_user(username: str, password_hash: str) -> int:
 
-    if not username_available(username):
+    if not is_username_available(username):
         raise ValueError(f"The username '{username}' is already taken.")
 
     user_id = None
     with sqlite3.connect(config.RELATIONAL_DB_NAME) as conn:
         cur = conn.cursor()
-
         cur.execute(
             """INSERT INTO accounts (username, password_hash) values (?, ?) """,
             (username, password_hash),
         )
         cur.execute("SELECT user_id from accounts where username like ?", (username,))
         user_id = cur.fetchone()[0]
-        cur.execute(
-            """INSERT INTO user_chat_history (user_id, chat_json_path) values (?, ?) """,
-            (user_id, f".chat_history/user_{user_id}.json"),
-        )
-
         conn.commit()
         cur.close()
     return user_id
 
 
-def username_available(username: str) -> bool:
+def insert_user_chat_history(user_id: int, user_chat_history_path: str):
+
+    if not user_id or not user_chat_history_path:
+        raise ValueError(
+            f"Required parameter 'user_id' or 'user_chat_history_path' is missing"
+        )
+
+    with sqlite3.connect(config.RELATIONAL_DB_NAME) as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """INSERT INTO user_chat_history (user_id, chat_json_path) values (?, ?) """,
+            (user_id, user_chat_history_path),
+        )
+        conn.commit()
+        cur.close()
+    return user_chat_history_path
+
+
+def is_username_available(username: str) -> bool:
     is_available = True
     with sqlite3.connect(config.RELATIONAL_DB_NAME) as conn:
         cur = conn.cursor()
@@ -41,21 +53,19 @@ def username_available(username: str) -> bool:
     return is_available
 
 
-def authenticate_and_get_user_id(username: str, password_hash: str) -> int | None:
-    user_id = None
+def get_user(username: str) -> dict | None:
+    user=None
     with sqlite3.connect(config.RELATIONAL_DB_NAME) as conn:
         cur = conn.cursor()
-
         cur.execute(
-            "SELECT user_id, password_hash from accounts where username like ?",
+            "SELECT user_id, user_name, password_hash from accounts where username like ?",
             (username,),
         )
         data = cur.fetchone()
-        if data and len(data) == 2 and str(data[1]) == password_hash:
-            user_id = data[0]
+        user = {"user_id": data[0], "username": data[1], "password_hash": data[2]}
         conn.commit()
         cur.close()
-    return user_id
+    return user
 
 
 def get_user_chat_history(user_id) -> str | None:

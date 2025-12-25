@@ -3,3 +3,6 @@
 chroma/
 __pycache__/
 .vscode/
+accounts.db
+*.png
+.chroma/
