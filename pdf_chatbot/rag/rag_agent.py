@@ -10,6 +10,19 @@ from pdf_chatbot.rag.retriever import ScopedHybridRetriever
 import pdf_chatbot.config as config
 
 
+CONTEXT_NOT_AVAILABLE_ERROR_MESSAGE = """\
+I couldn’t find the answer in the uploaded document.
+
+🔒 Document-Grounded Mode Enabled
+When a PDF is uploaded, I generate responses strictly based on the document content only and do not use my general knowledge.
+
+To proceed, you can:
+- "rephrase your question"
+- "upload a more relevant document"
+- "or remove the document to allow a general answer"
+"""
+
+
 class RAGAgentState(TypedDict):
     user_id: str
     llm_platform: str
@@ -65,9 +78,7 @@ class RAGAgent:
     def _is_respondable(self, state: RAGAgentState) -> bool:
 
         if ("context" not in state) or (state["context"].strip() == ""):
-            state["error"] = (
-                "Couldn't find any relevent document to answer user query. Please try with different query"
-            )
+            state["error"] = CONTEXT_NOT_AVAILABLE_ERROR_MESSAGE
             state["messages"].append(AIMessage(state["error"]))
             return False
         return True
@@ -104,9 +115,7 @@ class RAGAgent:
         if response.is_evidence_based:
             state["messages"].append(AIMessage(content=response.response))
         else:
-            state["error"] = (
-                "The user query is not related to any of the documents provided. Please try with differnt query"
-            )
+            state["error"] = CONTEXT_NOT_AVAILABLE_ERROR_MESSAGE
             state["messages"].append(AIMessage(state["error"]))
         return state
 
@@ -127,7 +136,6 @@ class RAGAgent:
         graph.add_edge("respond_to_user_query", END)
         self.app = graph.compile()
         print(self.app.get_graph().draw_ascii())
-        self.app.get_graph().draw_mermaid_png(output_file_path="output.png")
 
     def invoke(self, state: RAGAgentState) -> RAGAgentState:
 

@@ -19,7 +19,6 @@ def verify_password(password: str, password_hash: str) -> bool:
 def create_account(username: str, password: str) -> int:
 
     user_id = repository.insert_user(username, hash_password(password))
-
     user_chat_history_path = f"{config.CHAT_HISTORY_ROOT_FOLDER}user_{user_id}.json"
     file_path = Path(user_chat_history_path)
     file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -34,7 +33,6 @@ def authenticate_and_get_user(username: str, password: str) -> dict | None:
 
     if not username or not password:
         raise ValueError("Required params 'username' or 'password' is missing")
-
     if username.strip() == "demo":
         return None
 

@@ -1,7 +1,7 @@
 import gradio as gr
 from langchain_core.messages import AIMessage, HumanMessage
 import pdf_chatbot.config as config
-from pdf_chatbot.chat.chat_handler import rag_chat
+from pdf_chatbot.chat.chat_handler import smart_chat
 from pdf_chatbot.db.repository import get_user
 
 
@@ -54,7 +54,7 @@ def _gradio_pre_processing(
     )
 
 
-def gradio_chat(state: dict, files: list[bytes]):
+def gradio_chat(state: dict, files: list[bytes] | None = None):
 
     if (not state.get("input")) or state.get("input").strip() == "":
         gr.Warning("Please enter a User query in the input box")
@@ -62,10 +62,6 @@ def gradio_chat(state: dict, files: list[bytes]):
         return state, state["chat_history"]
     if (not state.get("user")) or state.get("user").strip() == "":
         gr.Warning("Please select a valid username from the dropdown.")
-        state["error"] = "INVALID_PARAMS"
-        return state, state["chat_history"]
-    if not files or len(files) == 0:
-        gr.Warning("No PDF file uploaded. Please attach a PDF file")
         state["error"] = "INVALID_PARAMS"
         return state, state["chat_history"]
 
@@ -79,7 +75,12 @@ def gradio_chat(state: dict, files: list[bytes]):
         "chat_history": _format_messages_to_langchain(state["chat_history"]),
         "llm_platform": state["llm_platform"],
     }
-    state["chat_history"] = rag_chat(chat_session, input=state["input"], files=files)
+    state["chat_history"] = smart_chat(
+        chat_session,
+        input=state["input"],
+        files=files,
+        llm_platform=chat_session["llm_platform"],
+    )
     return state, _format_messages_to_gradio_chat(state["chat_history"])
 
 
@@ -96,6 +97,13 @@ def _gradio_post_processing(state):
     )
 
 
+def _hadle_chat_mode_label(files: list[str]):
+
+    if files and type(files) == list and len(files) > 0:
+        return gr.update(visible=True)
+    return gr.update(visible=False)
+
+
 def create_gradio_chat_interface():
 
     with gr.Blocks() as app:
@@ -103,41 +111,67 @@ def create_gradio_chat_interface():
         state = gr.State({})
 
         with gr.Row():
-            user = gr.Dropdown(
-                choices=["demo"],
-                value="demo",
-                type="value",
-                multiselect=False,
-            )
-            llm_platform = gr.Dropdown(
-                choices=config.LLM_PLATFORMS,
-                value=config.LLM_PLATFORMS[0],
-                type="value",
-                multiselect=False,
-            )
-            msg = gr.Textbox(placeholder="Type your query here...", scale=8)
-            files = gr.File(
-                file_count="multiple", type="binary", file_types=[".pdf"], height=80
-            )
-            send = gr.Button("Send", scale=1)
+
+            with gr.Column(scale=0):
+
+                user = gr.Dropdown(
+                    choices=["demo"],
+                    value="demo",
+                    type="value",
+                    label="User",
+                    multiselect=False,
+                )
+                llm_platform = gr.Dropdown(
+                    choices=config.LLM_PLATFORMS,
+                    value=config.LLM_PLATFORMS[0],
+                    type="value",
+                    label="LLM Platform",
+                    multiselect=False,
+                )
+            with gr.Column(scale=8):
+                msg = gr.Textbox(
+                    placeholder="Type your query here...", label="User Message:"
+                )
+            with gr.Column(scale=0):
+                chat_mode = gr.Markdown(
+                    value="🔒 Document-Grounded Mode Enabled", visible=False
+                )
+                with gr.Row():
+                    files = gr.File(
+                        file_count="multiple",
+                        type="binary",
+                        file_types=[".pdf"],
+                        height=80,
+                    )
+                    send = gr.Button("Send")
+
+        files.change(
+            fn=_hadle_chat_mode_label,
+            inputs=[
+                files,
+            ],
+            outputs=[
+                chat_mode,
+            ],
+        )
 
         send.click(
             fn=_gradio_pre_processing,
             inputs=[state, user, llm_platform, msg, chatbot],
-            outputs=[state, llm_platform, msg, files, send],
+            outputs=[state, llm_platform, msg, user, send],
         ).then(fn=gradio_chat, inputs=[state, files], outputs=[state, chatbot]).then(
             fn=_gradio_post_processing,
             inputs=[state],
-            outputs=[llm_platform, msg, files, send],
+            outputs=[llm_platform, msg, user, send],
         )
         msg.submit(
             fn=_gradio_pre_processing,
             inputs=[state, user, llm_platform, msg, chatbot],
-            outputs=[state, llm_platform, msg, files, send],
+            outputs=[state, llm_platform, msg, user, send],
         ).then(fn=gradio_chat, inputs=[state, files], outputs=[state, chatbot]).then(
             fn=_gradio_post_processing,
             inputs=[state],
-            outputs=[llm_platform, msg, files, send],
+            outputs=[llm_platform, msg, user, send],
         )
 
     return app

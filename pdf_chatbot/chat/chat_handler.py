@@ -1,7 +1,10 @@
 from pdf_chatbot.rag.rag_agent import RAGAgent
 from pdf_chatbot.documents.document_processor import save_user_documents
-import base64
+from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
+from langchain_core.runnables import Runnable
 from pdf_chatbot import config
+from pdf_chatbot.llm.prompt_templates import SIMPLE_CHAT_PROMPT_TEMPLATE
+from pdf_chatbot.llm.model_manager import get_llm_instance
 
 
 def rag_chat(
@@ -9,7 +12,7 @@ def rag_chat(
     input: str,
     files: list[bytes],
     llm_platform: str = config.LLM_PLATFORMS[0],
-):
+) -> list[BaseMessage]:
 
     if not session or type(session) != dict:
         raise ValueError("Missing or Invalid required parameter 'session'")
@@ -35,6 +38,34 @@ def rag_chat(
     agent = RAGAgent()
     result_state = agent.invoke(state)
     return result_state["messages"]
+
+
+def simple_chat(
+    session: dict, input: str, llm_platform: str = config.LLM_PLATFORMS[0]
+) -> list[BaseMessage]:
+
+    chat_history = session.get("chat_history") or []
+    chain: Runnable = SIMPLE_CHAT_PROMPT_TEMPLATE | get_llm_instance(
+        platform=llm_platform
+    )
+    response = chain.invoke({"input": input, "messages": chat_history})
+    chat_history.append(HumanMessage(content=input))
+    chat_history.append(response)
+    return chat_history
+
+
+def smart_chat(
+    session: dict,
+    input: str,
+    files: list[bytes] | None = None,
+    llm_platform: str = config.LLM_PLATFORMS[0],
+) -> list[BaseMessage]:
+    if not files or type(files) != list or len(files) == 0:
+        return simple_chat(session=session, input=input, llm_platform=llm_platform)
+    else:
+        return rag_chat(
+            session=session, input=input, files=files, llm_platform=llm_platform
+        )
 
 
 def _ingest_documents(files: list[bytes], user_id: int):

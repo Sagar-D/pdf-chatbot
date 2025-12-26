@@ -1,5 +1,20 @@
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
+
+SIMPLE_CHAT_PROMPT_TEMPLATE = ChatPromptTemplate.from_messages(
+    [
+        (
+            "system",
+            """\
+- You are a helpfull assistant. Answer user queries in a polite way.
+- DO NOT hallucinate answers
+- If you don't know the answer, then accept that instead of making up answers.""",
+        ),
+        MessagesPlaceholder("messages"),
+        ("user", "{input}"),
+    ]
+)
+
 # Enrich user query for a better RAG retreival using LLM
 QUERY_ENRICHMENT_PROMPT = ChatPromptTemplate.from_messages(
     [

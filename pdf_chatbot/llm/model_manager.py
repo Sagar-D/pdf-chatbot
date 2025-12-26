@@ -7,17 +7,21 @@ from pdf_chatbot import config
 dotenv.load_dotenv()
 
 
-def _get_ollama_instance(model: str = config.DEFAULT_LLM_MODELS["ollama"]):
+def _get_ollama_instance(model: str | None = None):
+    if not model:
+        model = config.DEFAULT_LLM_MODELS["ollama"]
     return ChatOllama(base_url=os.getenv("OLLAMA_BASE_URL"), model=model)
 
 
-def _get_gemini_instance(model: str = config.DEFAULT_LLM_MODELS["gemini"]):
+def _get_gemini_instance(model: str | None = None):
+    if not model:
+        model = config.DEFAULT_LLM_MODELS["gemini"]
     return ChatGoogleGenerativeAI(
         model=model, google_api_key=os.getenv("GOOGLE_API_KEY")
     )
 
 
-def get_llm_instance(platform: str, model: str):
+def get_llm_instance(platform: str, model: str = None):
     if platform.strip().lower() == "gemini":
         return _get_gemini_instance(model)
     if platform.strip().lower() == "ollama":

@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Header, Body, Response, status
 from pdf_chatbot.user.account import create_account, authenticate_and_get_user
 from pdf_chatbot.user.session import session_manager
-from pdf_chatbot.chat.chat_handler import rag_chat
+from pdf_chatbot.chat.chat_handler import smart_chat
 from pydantic import UUID4
 from typing import Annotated
 import base64
@@ -78,7 +78,7 @@ def chat(
     for file in chat_request.files:
         encoded_bytes = file.file_content_base64.encode("utf-8")
         binary_files.append(base64.b64decode(encoded_bytes))
-    chat_thread = rag_chat(
+    chat_thread = smart_chat(
         session=session, input=chat_request.message, files=binary_files
     )
     session["chat_history"] = chat_thread
