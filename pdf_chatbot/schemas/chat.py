@@ -1,7 +1,6 @@
 from pydantic import BaseModel
 from pdf_chatbot.schemas.common import APIStatus
 from enum import Enum
-from datetime import datetime
 from langchain_core.messages import BaseMessage
 
 
@@ -27,7 +26,6 @@ class ChatMessage(BaseModel):
 
 class AssistantResponse(BaseModel):
     content: str
-    timestamp: datetime
 
 
 class ChatData(BaseModel):
@@ -37,7 +35,26 @@ class ChatData(BaseModel):
 
 class ChatResponse(BaseModel):
     status: APIStatus = APIStatus.SUCCESS
-    data: list[ChatMessage]
+    data: ChatData
+
+    @classmethod
+    def from_data(cls, chat_thread: list[BaseMessage]) -> "ChatResponse":
+        assistant_response = AssistantResponse(content=chat_thread[-1].content)
+        chat_message_list: list[ChatMessage] = []
+        for message in chat_thread[:-1]:
+            if message.type == "human":
+                chat_message_list.append(
+                    ChatMessage(role=Role.USER, content=message.content)
+                )
+            elif message.type == "ai":
+                chat_message_list.append(
+                    ChatMessage(role=Role.ASSISTANT, content=message.content)
+                )
+        return cls(
+            data=ChatData(
+                assistant_response=assistant_response, chat_history=chat_message_list
+            )
+        )
 
 
 class ChatHistoryResponse(BaseModel):
@@ -46,14 +63,14 @@ class ChatHistoryResponse(BaseModel):
 
     @classmethod
     def from_data(cls, chat_history: list[BaseMessage]) -> "ChatHistoryResponse":
-        chat_history: list[ChatMessage] = []
+        chat_message_list: list[ChatMessage] = []
         for message in chat_history:
             if message.type == "human":
-                chat_history.append(
+                chat_message_list.append(
                     ChatMessage(role=Role.USER, content=message.content)
                 )
-            elif message.type == "ai" :
-                chat_history.append(
-                    ChatMessage(role=Role.ASSISTANT,content=message.content)
+            elif message.type == "ai":
+                chat_message_list.append(
+                    ChatMessage(role=Role.ASSISTANT, content=message.content)
                 )
-        return cls(data = chat_history)
+        return cls(data=chat_message_list)

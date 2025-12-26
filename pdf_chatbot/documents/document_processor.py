@@ -57,14 +57,14 @@ def save_user_documents(files: list[bytes], user_id: int) -> list[str]:
 
         ids, page_contents, metadatas = [], [], []
         for i, chunk in enumerate(chunks):
-            ids.append(f"{document_hash_id}:{i}")
+            ids.append(f"{user_id}:{document_hash_id}:{i}:")
             page_contents.append(chunk.page_content)
             metadatas.append(
                 {
                     **chunk.metadata,
                     "user_id": user_id,
                     "document_hash_id": document_hash_id,
-                    "chunk_id": f"{document_hash_id}:{i}",
+                    "chunk_id": f"{user_id}:{document_hash_id}:{i}",
                     "source_file": "NA",  # To be updated when we start saving user files on server
                     "chunk_content": chunk.page_content,
                 }

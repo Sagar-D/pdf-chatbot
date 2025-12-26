@@ -47,6 +47,8 @@ class ScopedHybridRetriever:
             )
 
     def _get_bm25_retriever(self, chunks: list[str]):
+        if not chunks or type(chunks) != list or len(chunks) == 0:
+            chunks = ["dummy chunk"]
         bm25_retriever = BM25Retriever.from_texts(chunks)
         bm25_retriever.k = self.k
         return bm25_retriever
