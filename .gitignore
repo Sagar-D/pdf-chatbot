@@ -4,5 +4,7 @@ chroma/
 __pycache__/
 .vscode/
 accounts.db
+*.sqlite
 *.png
 .chroma/
+.chat_history/

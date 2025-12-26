@@ -1,9 +1,10 @@
-from user.session import create_session
-from db import repository
+from pdf_chatbot.user.session import create_session, get_session_id
+from pdf_chatbot.db import repository
 from passlib.context import CryptContext
+from pdf_chatbot import config
 import json
 from pathlib import Path
-import config
+
 
 pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
 
@@ -16,7 +17,9 @@ def verify_password(password: str, password_hash: str) -> bool:
     return pwd_context.verify(password, password_hash)
 
 
-def create_account(username: str, password_hash: str) -> int:
+def create_account(username: str, password: str) -> int:
+
+    user_id = repository.insert_user(username, hash_password(password))
 
     user_chat_history_path = f"{config.CHAT_HISTORY_ROOT_FOLDER}user_{user_id}.json"
     file_path = Path(user_chat_history_path)
@@ -24,13 +27,11 @@ def create_account(username: str, password_hash: str) -> int:
     with open(file_path, "w") as chat_file:
         json.dump([], chat_file)
 
-    user_id = repository.insert_user(username, password_hash)
     repository.insert_user_chat_history(user_id, user_chat_history_path)
-    session_id = create_session(user_id=user_id)
-    return user_id, session_id
+    return user_id
 
 
-def authenticate_user(username: str, password: str) -> int | None:
+def authenticate_and_get_user(username: str, password: str) -> dict | None:
 
     if not username or not password:
         raise ValueError("Required params 'username' or 'password' is missing")
@@ -38,6 +39,6 @@ def authenticate_user(username: str, password: str) -> int | None:
     user = repository.get_user(username)
     if not user:
         return None
-
-    if verify_password(password=password, password_hash=user["password_hash"]):
-        return user["user_id"]
+    if not verify_password(password=password, password_hash=user["password_hash"]):
+        return None
+    return user

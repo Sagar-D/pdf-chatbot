@@ -1,7 +1,23 @@
 import sqlite3
+from pdf_chatbot import config
+from pathlib import Path
+from pdf_chatbot.user.account import hash_password
+import json
 
-import config
+default_users = [(1, "user", hash_password("password")), (2, "admin", hash_password("password"))]
+default_chat_history = [
+    (1, ".chat_history/user_1.json"),
+    (2, ".chat_history/user_2.json"),
+]
 
+def setup_chat_history() :
+
+    for chat_history_obj in default_chat_history :
+        user_chat_history_path = chat_history_obj[1]
+        file_path = Path(user_chat_history_path)
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(file_path, "w") as chat_file:
+            json.dump([], chat_file)
 
 def initialize_db():
 
@@ -32,11 +48,6 @@ def initialize_db():
             """
         )
 
-        default_users = [(1, "user", "password"), (2, "admin", "password")]
-        default_chat_history = [
-            (1, ".chat_history/user_1.json"),
-            (2, ".chat_history/user_2.json"),
-        ]
         cursor.executemany(
             """INSERT OR IGNORE INTO accounts (user_id, username, password_hash) VALUES (?, ?, ?)""",
             default_users,
@@ -45,18 +56,10 @@ def initialize_db():
             """INSERT OR IGNORE INTO user_chat_history (user_id, chat_json_path) VALUES (?, ?)""",
             default_chat_history,
         )
-
-        cursor.execute("""SELECT * FROM accounts""")
-
-        rows = cursor.fetchall()
-        for row in rows:
-            print(
-                f"user_id : {row[0]} | username : {row[1]} | password : {row[2]} | created_at : {row[3]} | "
-            )
-
         conn.commit()
         cursor.close()
 
 
 if __name__ == "__main__":
+    setup_chat_history()
     initialize_db()

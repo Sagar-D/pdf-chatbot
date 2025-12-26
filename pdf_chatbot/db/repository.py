@@ -1,5 +1,5 @@
 import sqlite3
-import config
+from pdf_chatbot import config
 
 
 def insert_user(username: str, password_hash: str) -> int:
@@ -10,11 +10,10 @@ def insert_user(username: str, password_hash: str) -> int:
     user_id = None
     with sqlite3.connect(config.RELATIONAL_DB_NAME) as conn:
         cur = conn.cursor()
-        cur.execute(
-            """INSERT INTO accounts (username, password_hash) values (?, ?) """,
+        user_id = cur.execute(
+            """INSERT INTO accounts (username, password_hash) values (?, ?) RETURNING user_id""",
             (username, password_hash),
         )
-        cur.execute("SELECT user_id from accounts where username like ?", (username,))
         user_id = cur.fetchone()[0]
         conn.commit()
         cur.close()
@@ -44,26 +43,26 @@ def is_username_available(username: str) -> bool:
     with sqlite3.connect(config.RELATIONAL_DB_NAME) as conn:
         cur = conn.cursor()
 
-        cur.execute("SELECT user_id from accounts where username like ?", (username,))
-        results = cur.fetchall()
-        if len(results) > 0:
+        cur.execute(
+            "SELECT user_id FROM accounts WHERE username = ? LIMIT 1", (username,)
+        )
+        if cur.fetchone():
             is_available = False
-        conn.commit()
         cur.close()
     return is_available
 
 
 def get_user(username: str) -> dict | None:
-    user=None
+    user = None
     with sqlite3.connect(config.RELATIONAL_DB_NAME) as conn:
         cur = conn.cursor()
         cur.execute(
-            "SELECT user_id, user_name, password_hash from accounts where username like ?",
+            "SELECT user_id, username, password_hash FROM accounts WHERE username = ? LIMIT 1",
             (username,),
         )
         data = cur.fetchone()
-        user = {"user_id": data[0], "username": data[1], "password_hash": data[2]}
-        conn.commit()
+        if data:
+            user = {"user_id": data[0], "username": data[1], "password_hash": data[2]}
         cur.close()
     return user
 
@@ -74,9 +73,11 @@ def get_user_chat_history(user_id) -> str | None:
         cur = conn.cursor()
 
         cur.execute(
-            "SELECT chat_json_path from user_chat_history where user_id = ?", (user_id,)
+            "SELECT chat_json_path FROM user_chat_history WHERE user_id = ? LIMIT 1",
+            (user_id,),
         )
-        chat_history_json_path = cur.fetchone()[0]
-        conn.commit()
+        result = cur.fetchone()
+        if result:
+            chat_history_json_path = result[0]
         cur.close()
     return chat_history_json_path

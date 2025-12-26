@@ -19,5 +19,5 @@ PROMPT_ENRICHMENT_FEATURE_ENABLED=False
 IS_CONVERSATIONAL_RAG=False
 
 #Relational Database
-RELATIONAL_DB_NAME="accounts.sqlite3"
+RELATIONAL_DB_NAME="accounts.sqlite"
 CHAT_HISTORY_ROOT_FOLDER=".chat_history/"

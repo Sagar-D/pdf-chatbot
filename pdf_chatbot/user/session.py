@@ -1,7 +1,8 @@
-from db import repository
+from pdf_chatbot.db import repository
 import json
 from datetime import datetime
 import uuid
+
 
 _session = {
     "session_1": {
@@ -17,6 +18,10 @@ _session_by_user_id = {1: "session_1"}
 
 def get_session(session_id: str) -> dict:
     return _session.get(session_id)
+
+
+def get_session_id(user_id: int) -> str:
+    return _session_by_user_id.get(user_id)
 
 
 def get_session_by_user_id(user_id: int) -> dict:
@@ -45,12 +50,12 @@ def create_session(user_id: int, chat_history_file_path: str | None = None) -> d
         _session.pop(_session_by_user_id[user_id], None)
 
     _session[session_id] = current_session
-    _session_by_user_id[user_id] = current_session
-    return current_session
+    _session_by_user_id[user_id] = session_id
+    return session_id
 
 
 def delete_session(session_id: str):
     current_session = _session.get(session_id)
-    _session.pop(session_id, None)
-    _session_by_user_id.pop(current_session.get("user_id"), None)
-    pass
+    if current_session:
+        _session.pop(session_id, None)
+        _session_by_user_id.pop(current_session.get("user_id"), None)
