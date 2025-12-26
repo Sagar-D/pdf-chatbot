@@ -65,7 +65,7 @@ def chat(
     chat_request: ChatRequest,
     session_id: Annotated[UUID4, Header(alias="X-Session-UUID")],
     response: Response,
-) -> ChatResponse:
+) -> ChatResponse | ErrorResponse:
     session = session_manager.get_session(session_id=str(session_id))
     if not session:
         response.status_code = status.HTTP_401_UNAUTHORIZED
