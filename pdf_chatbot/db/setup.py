@@ -4,20 +4,23 @@ from pathlib import Path
 from pdf_chatbot.user.account import hash_password
 import json
 
-default_users = [(1, "user", hash_password("password")), (2, "admin", hash_password("password"))]
+default_users = [
+    (1, "demo", hash_password("demo_password")),
+]
 default_chat_history = [
     (1, ".chat_history/user_1.json"),
-    (2, ".chat_history/user_2.json"),
 ]
 
-def setup_chat_history() :
 
-    for chat_history_obj in default_chat_history :
+def setup_chat_history():
+
+    for chat_history_obj in default_chat_history:
         user_chat_history_path = chat_history_obj[1]
         file_path = Path(user_chat_history_path)
         file_path.parent.mkdir(parents=True, exist_ok=True)
         with open(file_path, "w") as chat_file:
             json.dump([], chat_file)
+
 
 def initialize_db():
 

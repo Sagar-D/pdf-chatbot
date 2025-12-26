@@ -1,10 +1,17 @@
-from pdf_chatbot.chat.chat_handler import ChatHandler
+from pdf_chatbot.chat.chat_handler import rag_chat
 from pdf_chatbot.chat.gradio_chat_ui import create_gradio_chat_interface
-from pdf_chatbot.user.session import get_session_by_user_id
+from pdf_chatbot.api.routes import app
+import argparse
 
-# Replace once Session Management is complete
-session = get_session_by_user_id(1)
 
-chat_handler = ChatHandler(session)
-app = create_gradio_chat_interface(chat_handler.chat)
-app.launch()
+parser = argparse.ArgumentParser()
+parser.add_argument(
+    "--demo",
+    action="store_true",
+    help="If flag is passed, the gradio demp app will be launched",
+)
+args = parser.parse_args()
+
+if args.demo:
+    gradio_app = create_gradio_chat_interface()
+    gradio_app.launch()

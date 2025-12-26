@@ -35,6 +35,9 @@ def authenticate_and_get_user(username: str, password: str) -> dict | None:
     if not username or not password:
         raise ValueError("Required params 'username' or 'password' is missing")
 
+    if username.strip() == "demo":
+        return None
+
     user = repository.get_user(username)
     if not user:
         return None

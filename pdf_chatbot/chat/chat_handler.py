@@ -1,7 +1,5 @@
 from pdf_chatbot.rag.rag_agent import RAGAgent
 from pdf_chatbot.documents.document_processor import save_user_documents
-from langchain.messages import AIMessage, HumanMessage
-from typing import Union
 import base64
 from pdf_chatbot import config
 
@@ -41,29 +39,3 @@ def rag_chat(
 
 def _ingest_documents(files: list[bytes], user_id: int):
     return save_user_documents(files=files, user_id=user_id)
-
-
-def _generate_gradio_chat(messages: list[Union[AIMessage, HumanMessage]]) -> list[dict]:
-    history = []
-    for message in messages:
-        if type(message) == AIMessage:
-            role = "assistant"
-        elif type(message) == HumanMessage:
-            role = "user"
-        else:
-            continue
-        history.append({"role": role, "content": message.content})
-    return history
-
-
-if __name__ == "__main__":
-
-    file_content = None
-    with open("/Users/sagard/Downloads/test_docling.pdf", "rb") as pdf_file:
-        file_content = pdf_file.read()
-
-    files = [file_content]
-    session = {"user_id": 4, "chat_history": []}
-
-    result = rag_chat(session=session, input="What is docling?", files=files)
-    print(result)

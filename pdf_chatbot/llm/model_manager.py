@@ -8,9 +8,7 @@ dotenv.load_dotenv()
 
 
 def _get_ollama_instance(model: str = config.DEFAULT_LLM_MODELS["ollama"]):
-    return ChatOllama(
-        base_url=os.getenv("OLLAMA_BASE_URL"), model=model
-    )
+    return ChatOllama(base_url=os.getenv("OLLAMA_BASE_URL"), model=model)
 
 
 def _get_gemini_instance(model: str = config.DEFAULT_LLM_MODELS["gemini"]):
@@ -27,7 +25,3 @@ def get_llm_instance(platform: str, model: str):
     raise ValueError(
         f"Unsupported LLM platform passed. Supported LLM platforms : {config.LLM_PLATFORMS}"
     )
-
-if __name__ == "__main__" :
-    llm = _get_ollama_instance("qwen3:8b")
-    print(llm.invoke("Hello"))
