@@ -13,6 +13,7 @@ DEFAULT_LLM_MODELS = {"ollama": "qwen3:8b", "gemini": "gemini-2.0-flash"}
 QUERY_ENRICHMENT_MODEL = {"ollama": "qwen2.5:3b", "gemini": "gemini-2.5-flash-lite"}
 ELIGIBILITY_CHECK_MODEL = {"ollama": "qwen2.5:3b", "gemini": "gemini-2.5-flash-lite"}
 RESPONSE_GENERATOR_MODEL = {"ollama": "qwen3:8b", "gemini": "gemini-2.0-flash"}
+DEFAULT_TIMEOUT_LLM=60
 
 ## RAG Agent configs
 PROMPT_ENRICHMENT_FEATURE_ENABLED=False

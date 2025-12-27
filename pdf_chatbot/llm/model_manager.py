@@ -1,5 +1,6 @@
 from langchain_ollama import ChatOllama
 from langchain_google_genai import ChatGoogleGenerativeAI
+import asyncio
 import os
 import dotenv
 from pdf_chatbot import config
@@ -26,6 +27,16 @@ def get_llm_instance(platform: str, model: str = None):
         return _get_gemini_instance(model)
     if platform.strip().lower() == "ollama":
         return _get_ollama_instance(model)
+    raise ValueError(
+        f"Unsupported LLM platform passed. Supported LLM platforms : {config.LLM_PLATFORMS}"
+    )
+
+
+async def get_llm_instance_async(platform: str, model: str = None):
+    if platform.strip().lower() == "gemini":
+        return await asyncio.to_thread(_get_gemini_instance, model)
+    if platform.strip().lower() == "ollama":
+        return await asyncio.to_thread(_get_ollama_instance, model)
     raise ValueError(
         f"Unsupported LLM platform passed. Supported LLM platforms : {config.LLM_PLATFORMS}"
     )

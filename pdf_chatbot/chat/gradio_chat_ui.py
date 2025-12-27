@@ -54,7 +54,7 @@ def _gradio_pre_processing(
     )
 
 
-def gradio_chat(state: dict, files: list[bytes] | None = None):
+async def gradio_chat(state: dict, files: list[bytes] | None = None):
 
     if (not state.get("input")) or state.get("input").strip() == "":
         gr.Warning("Please enter a User query in the input box")
@@ -75,7 +75,7 @@ def gradio_chat(state: dict, files: list[bytes] | None = None):
         "chat_history": _format_messages_to_langchain(state["chat_history"]),
         "llm_platform": state["llm_platform"],
     }
-    state["chat_history"] = smart_chat(
+    state["chat_history"] = await smart_chat(
         chat_session,
         input=state["input"],
         files=files,

@@ -4,10 +4,10 @@ from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 from langchain_core.runnables import Runnable
 from pdf_chatbot import config
 from pdf_chatbot.llm.prompt_templates import SIMPLE_CHAT_PROMPT_TEMPLATE
-from pdf_chatbot.llm.model_manager import get_llm_instance
+from pdf_chatbot.llm.model_manager import get_llm_instance_async
 
 
-def rag_chat(
+async def rag_chat(
     session: dict,
     input: str,
     files: list[bytes],
@@ -32,41 +32,43 @@ def rag_chat(
         "user_id": session["user_id"],
         "messages": chat_history,
     }
-    document_hash_ids = _ingest_documents(files, session.get("user_id"))
+    document_hash_ids = await _ingest_documents(files, session.get("user_id"))
     state["active_documents_hash_list"] = document_hash_ids
 
     agent = RAGAgent()
-    result_state = agent.invoke(state)
+    result_state = await agent.ainvoke(state=state)
     return result_state["messages"]
 
 
-def simple_chat(
+async def simple_chat(
     session: dict, input: str, llm_platform: str = config.LLM_PLATFORMS[0]
 ) -> list[BaseMessage]:
 
     chat_history = session.get("chat_history") or []
-    chain: Runnable = SIMPLE_CHAT_PROMPT_TEMPLATE | get_llm_instance(
+    chain: Runnable = SIMPLE_CHAT_PROMPT_TEMPLATE | await get_llm_instance_async(
         platform=llm_platform
     )
-    response = chain.invoke({"input": input, "messages": chat_history})
+    response = await chain.ainvoke({"input": input, "messages": chat_history})
     chat_history.append(HumanMessage(content=input))
     chat_history.append(response)
     return chat_history
 
 
-def smart_chat(
+async def smart_chat(
     session: dict,
     input: str,
     files: list[bytes] | None = None,
     llm_platform: str = config.LLM_PLATFORMS[0],
 ) -> list[BaseMessage]:
     if not files or type(files) != list or len(files) == 0:
-        return simple_chat(session=session, input=input, llm_platform=llm_platform)
+        return await simple_chat(
+            session=session, input=input, llm_platform=llm_platform
+        )
     else:
-        return rag_chat(
+        return await rag_chat(
             session=session, input=input, files=files, llm_platform=llm_platform
         )
 
 
-def _ingest_documents(files: list[bytes], user_id: int):
-    return save_user_documents(files=files, user_id=user_id)
+async def _ingest_documents(files: list[bytes], user_id: int):
+    return await save_user_documents(files=files, user_id=user_id)

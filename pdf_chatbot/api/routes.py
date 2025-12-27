@@ -61,10 +61,11 @@ def get_chat_history(
 
 
 @app.post("/chat")
-def chat(
+async def chat(
     chat_request: ChatRequest,
-    session_id: Annotated[UUID4, Header(alias="X-Session-UUID")],
     response: Response,
+    session_id: Annotated[UUID4, Header(alias="X-Session-UUID")],
+    llm_platform: Annotated[str | None, Header(alias="LLM-Platform")] = None,
 ) -> ChatResponse | ErrorResponse:
     session = session_manager.get_session(session_id=str(session_id))
     if not session:
@@ -78,8 +79,11 @@ def chat(
     for file in chat_request.files:
         encoded_bytes = file.file_content_base64.encode("utf-8")
         binary_files.append(base64.b64decode(encoded_bytes))
-    chat_thread = smart_chat(
-        session=session, input=chat_request.message, files=binary_files
+    chat_thread = await smart_chat(
+        session=session,
+        input=chat_request.message,
+        files=binary_files,
+        llm_platform=llm_platform,
     )
     session["chat_history"] = chat_thread
     return ChatResponse.from_data(chat_thread=chat_thread)

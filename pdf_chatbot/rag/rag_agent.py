@@ -1,11 +1,13 @@
-from langgraph.graph import StateGraph, END
+from langgraph.graph import StateGraph, END, add_messages
 from langchain.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.output_parsers import StrOutputParser
 from pydantic import BaseModel, Field
-from typing import TypedDict, Union
+from typing import TypedDict, Annotated
+import asyncio
+from functools import partial
 
 import pdf_chatbot.llm.prompt_templates as PromptTemplates
-from pdf_chatbot.llm.model_manager import get_llm_instance
+from pdf_chatbot.llm.model_manager import get_llm_instance_async
 from pdf_chatbot.rag.retriever import ScopedHybridRetriever
 import pdf_chatbot.config as config
 
@@ -27,7 +29,7 @@ class RAGAgentState(TypedDict):
     user_id: str
     llm_platform: str
     input: str
-    messages: list[Union[AIMessage, HumanMessage, ToolMessage]]
+    messages: Annotated[list[AIMessage | HumanMessage | ToolMessage], add_messages]
     enriched_query: str
     active_documents_hash_list: list[str]
     context_docs: list[str]
@@ -41,49 +43,50 @@ class RAGAgent:
         self.graph = StateGraph(RAGAgentState)
         self._compile_graph()
 
-    def _enrich_query_for_retreival(self, state: RAGAgentState) -> RAGAgentState:
+    async def _enrich_query_for_retreival(self, state: RAGAgentState) -> RAGAgentState:
 
         if not config.PROMPT_ENRICHMENT_FEATURE_ENABLED:
-            state["enriched_query"] = state["input"]
-            return state
+            return {"enriched_query": state["input"]}
 
-        chain = (
-            PromptTemplates.QUERY_ENRICHMENT_PROMPT
-            | get_llm_instance(
-                platform=state["llm_platform"],
-                model=config.QUERY_ENRICHMENT_MODEL[state["llm_platform"]],
-            )
-            | StrOutputParser()
+        llm = await get_llm_instance_async(
+            platform=state["llm_platform"],
+            model=config.QUERY_ENRICHMENT_MODEL[state["llm_platform"]],
         )
-        enriched_query = chain.invoke(state)
-        state["enriched_query"] = enriched_query
-        return state
+        chain = PromptTemplates.QUERY_ENRICHMENT_PROMPT | llm | StrOutputParser()
+        enriched_query = await chain.ainvoke(state)
+        return {"enriched_query": enriched_query}
 
-    def _get_context(self, state: RAGAgentState) -> RAGAgentState:
+    async def _get_context(self, state: RAGAgentState) -> RAGAgentState:
+
         metadata_filter = {
             "$and": [
                 {"user_id": state["user_id"]},
                 {"document_hash_id": {"$in": state["active_documents_hash_list"]}},
             ]
         }
-        self.retriever = ScopedHybridRetriever(metadata_filter=metadata_filter)
-        state["context_docs"] = self.retriever.query_docs(
-            query=state["enriched_query"], k=3
-        )
-        state["context"] = "\n\n".join(
-            [doc.page_content for doc in state["context_docs"]]
-        )
-        return state
+
+        def retrieve_docs():
+            retriever = ScopedHybridRetriever(metadata_filter=metadata_filter)
+            docs = retriever.query_docs(query=state["enriched_query"], k=3)
+            return docs
+
+        context_docs = await asyncio.to_thread(retrieve_docs)
+        context = "\n\n".join([doc.page_content for doc in context_docs])
+        return {"context_docs": context_docs, "context": context}
 
     def _is_respondable(self, state: RAGAgentState) -> bool:
 
         if ("context" not in state) or (state["context"].strip() == ""):
-            state["error"] = CONTEXT_NOT_AVAILABLE_ERROR_MESSAGE
-            state["messages"].append(AIMessage(state["error"]))
             return False
         return True
 
-    def _respond_to_user_query(self, state: RAGAgentState) -> RAGAgentState:
+    async def _handle_no_context_error(self, state: RAGAgentState) -> RAGAgentState:
+        return {
+            "error": CONTEXT_NOT_AVAILABLE_ERROR_MESSAGE,
+            "messages": [AIMessage(CONTEXT_NOT_AVAILABLE_ERROR_MESSAGE)],
+        }
+
+    async def _respond_to_user_query(self, state: RAGAgentState) -> RAGAgentState:
 
         class QueryResponse(BaseModel):
             is_evidence_based: bool = Field(
@@ -96,10 +99,14 @@ class RAGAgent:
                 description="Response to the user query based on provided context."
             )
 
-        chain = PromptTemplates.RESPOND_WITH_EVIDENCE_PROMPT | get_llm_instance(
+        llm = await get_llm_instance_async(
             platform=state["llm_platform"],
             model=config.RESPONSE_GENERATOR_MODEL[state["llm_platform"]],
-        ).with_structured_output(QueryResponse)
+        )
+        chain = (
+            PromptTemplates.RESPOND_WITH_EVIDENCE_PROMPT
+            | llm.with_structured_output(QueryResponse)
+        )
 
         prompt_inputs = {
             "input": state["enriched_query"],
@@ -111,13 +118,21 @@ class RAGAgent:
             prompt_inputs["messages"] = state["messages"]
             prompt_inputs["input"] = state["input"]
 
-        response: QueryResponse = chain.invoke(state)
+        try:
+            response: QueryResponse = await asyncio.wait_for(
+                chain.ainvoke(prompt_inputs), timeout=config.DEFAULT_TIMEOUT_LLM
+            )
+        except asyncio.TimeoutError:
+            messages = [AIMessage(content="LLM Timed out! Please try again.")]
+            return {"messages": messages}
+
         if response.is_evidence_based:
-            state["messages"].append(AIMessage(content=response.response))
+            return {"messages": [AIMessage(content=response.response)]}
         else:
-            state["error"] = CONTEXT_NOT_AVAILABLE_ERROR_MESSAGE
-            state["messages"].append(AIMessage(state["error"]))
-        return state
+            return {
+                "messages": [AIMessage(CONTEXT_NOT_AVAILABLE_ERROR_MESSAGE)],
+                "error": CONTEXT_NOT_AVAILABLE_ERROR_MESSAGE,
+            }
 
     def _compile_graph(self):
 
@@ -125,19 +140,20 @@ class RAGAgent:
         graph.add_node("enrich_query", self._enrich_query_for_retreival)
         graph.add_node("get_context", self._get_context)
         graph.add_node("respond_to_user_query", self._respond_to_user_query)
+        graph.add_node("no_context_error_handler", self._handle_no_context_error)
 
         graph.set_entry_point("enrich_query")
         graph.add_edge("enrich_query", "get_context")
         graph.add_conditional_edges(
             "get_context",
             self._is_respondable,
-            {False: END, True: "respond_to_user_query"},
+            {True: "respond_to_user_query", False: "no_context_error_handler"},
         )
         graph.add_edge("respond_to_user_query", END)
         self.app = graph.compile()
         print(self.app.get_graph().draw_ascii())
 
-    def invoke(self, state: RAGAgentState) -> RAGAgentState:
+    async def ainvoke(self, state: RAGAgentState) -> RAGAgentState:
 
         if (
             ("input" not in state)
@@ -154,6 +170,5 @@ class RAGAgent:
         state["llm_platform"] = state.get("llm_platform") or "ollama"
         state["messages"] = state.get("messages") or []
         state["messages"].append(HumanMessage(state["input"]))
-        state["user_id"] = state.get("user_id") or ""
 
-        return self.app.invoke(state)
+        return await self.app.ainvoke(state)
