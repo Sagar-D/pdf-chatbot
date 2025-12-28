@@ -9,6 +9,7 @@ from functools import partial
 import pdf_chatbot.llm.prompt_templates as PromptTemplates
 from pdf_chatbot.llm.model_manager import get_llm_instance_async
 from pdf_chatbot.rag.retriever import ScopedHybridRetriever
+from pdf_chatbot.errors.rag_agent_error import LLMServiceError
 import pdf_chatbot.config as config
 
 
@@ -48,12 +49,26 @@ class RAGAgent:
         if not config.PROMPT_ENRICHMENT_FEATURE_ENABLED:
             return {"enriched_query": state["input"]}
 
-        llm = await get_llm_instance_async(
-            platform=state["llm_platform"],
-            model=config.QUERY_ENRICHMENT_MODEL[state["llm_platform"]],
-        )
+        llm = None
+        try:
+            llm = await asyncio.wait_for(
+                get_llm_instance_async(
+                    platform=state["llm_platform"],
+                    model=config.QUERY_ENRICHMENT_MODEL[state["llm_platform"]],
+                ),
+                timeout=config.LLM_DEFAULT_TIMEOUT,
+            )
+        except asyncio.TimeoutError as e:
+            raise LLMServiceError() from e
+
+        enriched_query = None
         chain = PromptTemplates.QUERY_ENRICHMENT_PROMPT | llm | StrOutputParser()
-        enriched_query = await chain.ainvoke(state)
+        try:
+            enriched_query = await asyncio.wait_for(
+                chain.ainvoke(state), timeout=config.LLM_DEFAULT_TIMEOUT
+            )
+        except asyncio.TimeoutError as e:
+            raise LLMServiceError() from e
         return {"enriched_query": enriched_query}
 
     async def _get_context(self, state: RAGAgentState) -> RAGAgentState:
@@ -99,10 +114,15 @@ class RAGAgent:
                 description="Response to the user query based on provided context."
             )
 
-        llm = await get_llm_instance_async(
-            platform=state["llm_platform"],
-            model=config.RESPONSE_GENERATOR_MODEL[state["llm_platform"]],
-        )
+        llm = None
+        try:
+            llm = await get_llm_instance_async(
+                platform=state["llm_platform"],
+                model=config.RESPONSE_GENERATOR_MODEL[state["llm_platform"]],
+            )
+        except asyncio.TimeoutError as e:
+            raise LLMServiceError() from e
+
         chain = (
             PromptTemplates.RESPOND_WITH_EVIDENCE_PROMPT
             | llm.with_structured_output(QueryResponse)
@@ -120,11 +140,10 @@ class RAGAgent:
 
         try:
             response: QueryResponse = await asyncio.wait_for(
-                chain.ainvoke(prompt_inputs), timeout=config.DEFAULT_TIMEOUT_LLM
+                chain.ainvoke(prompt_inputs), timeout=config.LLM_DEFAULT_TIMEOUT
             )
-        except asyncio.TimeoutError:
-            messages = [AIMessage(content="LLM Timed out! Please try again.")]
-            return {"messages": messages}
+        except asyncio.TimeoutError as e:
+            raise LLMServiceError() from e
 
         if response.is_evidence_based:
             return {"messages": [AIMessage(content=response.response)]}

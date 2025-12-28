@@ -2,6 +2,7 @@ import gradio as gr
 from langchain_core.messages import AIMessage, HumanMessage
 import pdf_chatbot.config as config
 from pdf_chatbot.chat.chat_handler import smart_chat
+from pdf_chatbot.errors.base import PDFChatbotError
 from pdf_chatbot.db.repository import get_user
 
 
@@ -38,7 +39,7 @@ def _gradio_pre_processing(
     if user:
         state["user"] = user
     state["chat_history"] = chat_history or []
-    state["llm_platform"] = llm_platform or config.LLM_PLATFORMS[0]
+    state["llm_platform"] = llm_platform or config.DEFAULT_LLM_PLATFORM
     state.pop("error", None)
 
     return (
@@ -75,18 +76,26 @@ async def gradio_chat(state: dict, files: list[bytes] | None = None):
         "chat_history": _format_messages_to_langchain(state["chat_history"]),
         "llm_platform": state["llm_platform"],
     }
-    state["chat_history"] = await smart_chat(
-        chat_session,
-        input=state["input"],
-        files=files,
-        llm_platform=chat_session["llm_platform"],
-    )
+    try:
+        state["chat_history"] = await smart_chat(
+            chat_session,
+            input=state["input"],
+            files=files,
+            llm_platform=chat_session["llm_platform"],
+        )
+    except PDFChatbotError as e:
+        gr.Warning(str(e))
+        state["error"] = "PDF_CHATBOT_ERROR"
+        return state, state["chat_history"]
+
     return state, _format_messages_to_gradio_chat(state["chat_history"])
 
 
-def _gradio_post_processing(state):
+def _gradio_post_processing(state: dict):
 
     msg_value = state.get("input") if state.get("error") else ""
+    state.pop("input", None)
+    state.pop("error", None)
     return (
         gr.update(interactive=True),
         gr.update(
@@ -107,43 +116,42 @@ def _hadle_chat_mode_label(files: list[str]):
 def create_gradio_chat_interface():
 
     with gr.Blocks() as app:
-        chatbot = gr.Chatbot(height=450)
+
         state = gr.State({})
+        chatbot = gr.Chatbot(height=450, scale=10)
+
+        with gr.Row():
+            chat_mode = gr.Markdown(
+                value="🔒 Document-Grounded Mode Enabled", visible=False
+            )
 
         with gr.Row():
 
-            with gr.Column(scale=0):
-
-                user = gr.Dropdown(
-                    choices=["demo"],
-                    value="demo",
-                    type="value",
-                    label="User",
-                    multiselect=False,
-                )
-                llm_platform = gr.Dropdown(
-                    choices=config.LLM_PLATFORMS,
-                    value=config.LLM_PLATFORMS[0],
-                    type="value",
-                    label="LLM Platform",
-                    multiselect=False,
-                )
-            with gr.Column(scale=8):
-                msg = gr.Textbox(
-                    placeholder="Type your query here...", label="User Message:"
-                )
-            with gr.Column(scale=0):
-                chat_mode = gr.Markdown(
-                    value="🔒 Document-Grounded Mode Enabled", visible=False
-                )
-                with gr.Row():
-                    files = gr.File(
-                        file_count="multiple",
-                        type="binary",
-                        file_types=[".pdf"],
-                        height=80,
-                    )
-                    send = gr.Button("Send")
+            user = gr.Dropdown(
+                choices=["demo"],
+                value="demo",
+                type="value",
+                label="User",
+                multiselect=False,
+                visible=False,
+            )
+            llm_platform = gr.Dropdown(
+                choices=config.LLM_PLATFORMS,
+                value=config.DEFAULT_LLM_PLATFORM,
+                type="value",
+                label="LLM Platform",
+                multiselect=False,
+            )
+            msg = gr.Textbox(
+                placeholder="Type your query here...", label="User Message:", scale=8
+            )
+            files = gr.File(
+                file_count="multiple",
+                type="binary",
+                file_types=[".pdf"],
+                height=80,
+            )
+            send = gr.Button("Send")
 
         files.change(
             fn=_hadle_chat_mode_label,

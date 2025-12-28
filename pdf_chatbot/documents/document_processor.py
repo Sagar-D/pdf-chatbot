@@ -1,8 +1,14 @@
 from docling.document_converter import DocumentConverter
 from docling.datamodel.base_models import DocumentStream
 from langchain_text_splitters import MarkdownHeaderTextSplitter
-from pdf_chatbot.rag.vector_store import VectorStore
 from langchain_core.documents import Document
+from pdf_chatbot.rag.vector_store import VectorStore
+from pdf_chatbot.errors.document_error import (
+    DocumentConversionError,
+    DocumentChunkingError,
+    InvalidDocumentError,
+)
+from pdf_chatbot import config
 import hashlib
 from typing import Union
 from io import BytesIO
@@ -13,11 +19,16 @@ doc_converter = DocumentConverter()
 
 
 def _convert_to_markdown(file_content: bytes) -> str:
-    pdf_file = BytesIO(file_content)
-    pdf_file.name = "sample.pdf"
-    doc = DocumentStream(name=pdf_file.name, stream=pdf_file)
-    result = doc_converter.convert(source=doc)
-    markdown = result.document.export_to_markdown()
+    try:
+        pdf_file = BytesIO(file_content)
+        pdf_file.name = "sample.pdf"
+        doc = DocumentStream(name=pdf_file.name, stream=pdf_file)
+        result = doc_converter.convert(source=doc)
+        markdown = result.document.export_to_markdown()
+    except Exception:
+        raise DocumentConversionError(
+            "Failed to extract PDF content for the files passed. Please check the file uploaded"
+        )
     return markdown
 
 
@@ -25,7 +36,12 @@ def _chunk_mardown_doc(markdown: str) -> list[Document]:
     splitter = MarkdownHeaderTextSplitter(
         headers_to_split_on=[("#", "h1"), ("##", "h2")]
     )
-    chunks = splitter.split_text(markdown)
+    try:
+        chunks = splitter.split_text(markdown)
+    except Exception:
+        raise DocumentChunkingError(
+            "Failed to chunk the document content. Please check the file uploaded"
+        )
     for chunk in chunks:
         headers = [chunk.metadata[key] for key in ["h1", "h2"] if key in chunk.metadata]
         if headers:
@@ -89,3 +105,16 @@ async def save_user_documents(files: list[bytes], user_id: int) -> list[str]:
         *(guarded_doument_ingestion_process(file) for file in files)
     )
     return document_hash_list
+
+
+def verify_user_documents(files: list[bytes]):
+
+    if len(files) > 3:
+        raise InvalidDocumentError(
+            "Too many files uploaded. Maximum of 3 files allowed."
+        )
+    for file in files:
+        if len(file) > (config.MAX_FILE_SIZE_MB * 1024 * 1024):
+            raise InvalidDocumentError(
+                f"File exceeds maximum allowed size ({config.MAX_FILE_SIZE_MB} MB)"
+            )

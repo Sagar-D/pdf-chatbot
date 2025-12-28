@@ -1,5 +1,8 @@
 from pdf_chatbot.rag.rag_agent import RAGAgent
-from pdf_chatbot.documents.document_processor import save_user_documents
+from pdf_chatbot.documents.document_processor import (
+    verify_user_documents,
+    save_user_documents,
+)
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 from langchain_core.runnables import Runnable
 from pdf_chatbot import config
@@ -11,7 +14,7 @@ async def rag_chat(
     session: dict,
     input: str,
     files: list[bytes],
-    llm_platform: str = config.LLM_PLATFORMS[0],
+    llm_platform: str = config.DEFAULT_LLM_PLATFORM,
 ) -> list[BaseMessage]:
 
     if not session or type(session) != dict:
@@ -41,7 +44,7 @@ async def rag_chat(
 
 
 async def simple_chat(
-    session: dict, input: str, llm_platform: str = config.LLM_PLATFORMS[0]
+    session: dict, input: str, llm_platform: str = config.DEFAULT_LLM_PLATFORM
 ) -> list[BaseMessage]:
 
     chat_history = session.get("chat_history") or []
@@ -58,7 +61,7 @@ async def smart_chat(
     session: dict,
     input: str,
     files: list[bytes] | None = None,
-    llm_platform: str = config.LLM_PLATFORMS[0],
+    llm_platform: str = config.DEFAULT_LLM_PLATFORM,
 ) -> list[BaseMessage]:
     if not files or type(files) != list or len(files) == 0:
         return await simple_chat(
@@ -71,4 +74,5 @@ async def smart_chat(
 
 
 async def _ingest_documents(files: list[bytes], user_id: int):
+    verify_user_documents(files=files)
     return await save_user_documents(files=files, user_id=user_id)
