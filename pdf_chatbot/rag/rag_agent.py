@@ -1,11 +1,10 @@
-from langgraph.graph import StateGraph, END, add_messages
-from langchain.messages import AIMessage, HumanMessage, ToolMessage
+from langgraph.graph import StateGraph, END
+from langchain.messages import AIMessage, HumanMessage
 from langchain_core.output_parsers import StrOutputParser
 from pydantic import BaseModel, Field
-from typing import TypedDict, Annotated
 import asyncio
-from functools import partial
 
+from pdf_chatbot.schemas.agent import RAGAgentState
 import pdf_chatbot.llm.prompt_templates as PromptTemplates
 from pdf_chatbot.llm.model_manager import get_llm_instance_async
 from pdf_chatbot.rag.retriever import ScopedHybridRetriever
@@ -26,18 +25,6 @@ To proceed, you can:
 """
 
 
-class RAGAgentState(TypedDict):
-    user_id: str
-    llm_platform: str
-    input: str
-    messages: Annotated[list[AIMessage | HumanMessage | ToolMessage], add_messages]
-    enriched_query: str
-    active_documents_hash_list: list[str]
-    context_docs: list[str]
-    context: str
-    error: str
-
-
 class RAGAgent:
 
     def __init__(self):
@@ -46,15 +33,15 @@ class RAGAgent:
 
     async def _enrich_query_for_retreival(self, state: RAGAgentState) -> RAGAgentState:
 
-        if not config.PROMPT_ENRICHMENT_FEATURE_ENABLED:
-            return {"enriched_query": state["input"]}
+        if not state.config.query_enrichment_enabled:
+            return state
 
         llm = None
         try:
             llm = await asyncio.wait_for(
                 get_llm_instance_async(
-                    platform=state["llm_platform"],
-                    model=config.QUERY_ENRICHMENT_MODEL[state["llm_platform"]],
+                    platform=state.config.llm_platform,
+                    model=config.QUERY_ENRICHMENT_MODEL[state.config.llm_platform],
                 ),
                 timeout=config.LLM_DEFAULT_TIMEOUT,
             )
@@ -65,41 +52,46 @@ class RAGAgent:
         chain = PromptTemplates.QUERY_ENRICHMENT_PROMPT | llm | StrOutputParser()
         try:
             enriched_query = await asyncio.wait_for(
-                chain.ainvoke(state), timeout=config.LLM_DEFAULT_TIMEOUT
+                chain.ainvoke({"messages": state.messages, "input": state.input}),
+                timeout=config.LLM_DEFAULT_TIMEOUT,
             )
         except asyncio.TimeoutError as e:
             raise LLMServiceError() from e
-        return {"enriched_query": enriched_query}
+        print(f"**** ENRICHED QUERY *** : {enriched_query}")
+        return state.model_copy(update={"enriched_query": enriched_query})
 
     async def _get_context(self, state: RAGAgentState) -> RAGAgentState:
 
         metadata_filter = {
             "$and": [
-                {"user_id": state["user_id"]},
-                {"document_hash_id": {"$in": state["active_documents_hash_list"]}},
+                {"user_id": state.user_id},
+                {"document_hash_id": {"$in": state.active_documents_hash_list}},
             ]
         }
 
         def retrieve_docs():
             retriever = ScopedHybridRetriever(metadata_filter=metadata_filter)
-            docs = retriever.query_docs(query=state["enriched_query"], k=3)
+            query = state.enriched_query or state.input
+            docs = retriever.query_docs(query=query, k=3)
             return docs
 
-        context_docs = await asyncio.to_thread(retrieve_docs)
-        context = "\n\n".join([doc.page_content for doc in context_docs])
-        return {"context_docs": context_docs, "context": context}
+        retrieved_docs = await asyncio.to_thread(retrieve_docs)
+        context = "\n\n".join([doc.page_content for doc in retrieved_docs])
+        return state.model_copy(update={"context": context})
 
     def _is_respondable(self, state: RAGAgentState) -> bool:
 
-        if ("context" not in state) or (state["context"].strip() == ""):
+        if (not state.context) or (state.context.strip() == ""):
             return False
         return True
 
     async def _handle_no_context_error(self, state: RAGAgentState) -> RAGAgentState:
-        return {
-            "error": CONTEXT_NOT_AVAILABLE_ERROR_MESSAGE,
-            "messages": [AIMessage(CONTEXT_NOT_AVAILABLE_ERROR_MESSAGE)],
-        }
+        return state.model_copy(
+            update={
+                "error": CONTEXT_NOT_AVAILABLE_ERROR_MESSAGE,
+                "messages": [AIMessage(CONTEXT_NOT_AVAILABLE_ERROR_MESSAGE)],
+            }
+        )
 
     async def _respond_to_user_query(self, state: RAGAgentState) -> RAGAgentState:
 
@@ -117,8 +109,8 @@ class RAGAgent:
         llm = None
         try:
             llm = await get_llm_instance_async(
-                platform=state["llm_platform"],
-                model=config.RESPONSE_GENERATOR_MODEL[state["llm_platform"]],
+                platform=state.config.llm_platform,
+                model=config.RESPONSE_GENERATOR_MODEL[state.config.llm_platform],
             )
         except asyncio.TimeoutError as e:
             raise LLMServiceError() from e
@@ -129,14 +121,10 @@ class RAGAgent:
         )
 
         prompt_inputs = {
-            "input": state["enriched_query"],
-            "context": state["context"],
-            "messages": [],
+            "input": state.input,
+            "context": state.context,
+            "messages": state.messages,
         }
-
-        if config.IS_CONVERSATIONAL_RAG:
-            prompt_inputs["messages"] = state["messages"]
-            prompt_inputs["input"] = state["input"]
 
         try:
             response: QueryResponse = await asyncio.wait_for(
@@ -146,12 +134,16 @@ class RAGAgent:
             raise LLMServiceError() from e
 
         if response.is_evidence_based:
-            return {"messages": [AIMessage(content=response.response)]}
+            return state.model_copy(
+                update={"messages": [AIMessage(content=response.response)]}
+            )
         else:
-            return {
-                "messages": [AIMessage(CONTEXT_NOT_AVAILABLE_ERROR_MESSAGE)],
-                "error": CONTEXT_NOT_AVAILABLE_ERROR_MESSAGE,
-            }
+            return state.model_copy(
+                update={
+                    "messages": [AIMessage(CONTEXT_NOT_AVAILABLE_ERROR_MESSAGE)],
+                    "error": CONTEXT_NOT_AVAILABLE_ERROR_MESSAGE,
+                }
+            )
 
     def _compile_graph(self):
 
@@ -174,20 +166,8 @@ class RAGAgent:
 
     async def ainvoke(self, state: RAGAgentState) -> RAGAgentState:
 
-        if (
-            ("input" not in state)
-            or (type(state["input"]) != str)
-            or state["input"].strip() == ""
-        ):
+        if state.input.strip() == "":
             raise ValueError("Missing required attribute 'input' in state object")
 
-        if "user_id" not in state or type(state["user_id"]) != int:
-            raise ValueError(
-                "Missing or Invalid required attribute 'user_id' in state object"
-            )
-
-        state["llm_platform"] = state.get("llm_platform") or "ollama"
-        state["messages"] = state.get("messages") or []
-        state["messages"].append(HumanMessage(state["input"]))
-
+        state.messages.append(HumanMessage(state.input))
         return await self.app.ainvoke(state)

@@ -1,6 +1,5 @@
 from fastapi import FastAPI, Header, Body, status, Depends
 from fastapi.exceptions import HTTPException
-from fastapi.responses import JSONResponse
 from fastapi.encoders import jsonable_encoder
 from pdf_chatbot.user.account import create_account, authenticate_and_get_user
 from pdf_chatbot.user.session import session_manager
@@ -86,7 +85,6 @@ def get_chat_history(
 async def chat(
     chat_request: ChatRequest,
     session: Annotated[dict, Depends(authentication_layer)],
-    llm_platform: Annotated[str | None, Header(alias="LLM-Platform")] = None,
 ) -> ChatResponse | ErrorResponse:
 
     binary_files = []
@@ -102,7 +100,7 @@ async def chat(
         session=session,
         input=chat_request.message,
         files=binary_files,
-        llm_platform=llm_platform,
+        agent_config=chat_request.agent_config,
     )
     session["chat_history"] = chat_thread
     return ChatResponse.from_data(chat_thread=chat_thread)

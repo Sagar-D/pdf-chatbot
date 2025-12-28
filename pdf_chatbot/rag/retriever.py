@@ -1,3 +1,4 @@
+from langchain_core.documents import Document
 from langchain_classic.retrievers import EnsembleRetriever
 from langchain_community.retrievers import BM25Retriever
 from langchain_chroma import Chroma
@@ -79,7 +80,7 @@ class ScopedHybridRetriever:
             retrievers=[vector_retriever, bm25_retriever], weights=[0.6, 0.4]
         )
 
-    def query_docs(self, query: str, k: int = 3):
+    def query_docs(self, query: str, k: int = 3) -> list[Document]:
         docs = self.retriever.invoke(input=query)
         scores = reranker.predict([(query, doc.page_content) for doc in docs])
         scored_docs = list(zip(docs, scores))

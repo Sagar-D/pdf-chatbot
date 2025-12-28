@@ -8,13 +8,14 @@ from langchain_core.runnables import Runnable
 from pdf_chatbot import config
 from pdf_chatbot.llm.prompt_templates import SIMPLE_CHAT_PROMPT_TEMPLATE
 from pdf_chatbot.llm.model_manager import get_llm_instance_async
+from pdf_chatbot.schemas.agent import AgentConfig, RAGAgentState
 
 
 async def rag_chat(
     session: dict,
     input: str,
     files: list[bytes],
-    llm_platform: str = config.DEFAULT_LLM_PLATFORM,
+    agent_config: AgentConfig | None = AgentConfig(),
 ) -> list[BaseMessage]:
 
     if not session or type(session) != dict:
@@ -28,18 +29,17 @@ async def rag_chat(
             "Missing or Invalid required parameter 'files' for PDF RAG chat"
         )
 
-    chat_history = session["chat_history"] or []
-    state = {
-        "input": input,
-        "llm_platform": llm_platform,
-        "user_id": session["user_id"],
-        "messages": chat_history,
-    }
     document_hash_ids = await _ingest_documents(files, session.get("user_id"))
-    state["active_documents_hash_list"] = document_hash_ids
 
+    agent_state = RAGAgentState(
+        user_id=int(session["user_id"]),
+        input=input,
+        messages=session["chat_history"] or [],
+        active_documents_hash_list=document_hash_ids,
+        config=agent_config,
+    )
     agent = RAGAgent()
-    result_state = await agent.ainvoke(state=state)
+    result_state = await agent.ainvoke(state=agent_state)
     return result_state["messages"]
 
 
@@ -61,15 +61,15 @@ async def smart_chat(
     session: dict,
     input: str,
     files: list[bytes] | None = None,
-    llm_platform: str = config.DEFAULT_LLM_PLATFORM,
+    agent_config: AgentConfig = AgentConfig(),
 ) -> list[BaseMessage]:
     if not files or type(files) != list or len(files) == 0:
         return await simple_chat(
-            session=session, input=input, llm_platform=llm_platform
+            session=session, input=input, llm_platform=agent_config.llm_platform
         )
     else:
         return await rag_chat(
-            session=session, input=input, files=files, llm_platform=llm_platform
+            session=session, input=input, files=files, agent_config=agent_config
         )
 
 

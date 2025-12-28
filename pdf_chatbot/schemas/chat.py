@@ -1,5 +1,6 @@
 from pydantic import BaseModel
 from pdf_chatbot.schemas.common import APIStatus
+from pdf_chatbot.schemas.agent import AgentConfig
 from enum import Enum
 from langchain_core.messages import BaseMessage
 
@@ -10,6 +11,7 @@ class File(BaseModel):
 
 
 class ChatRequest(BaseModel):
+    agent_config: AgentConfig = AgentConfig()
     message: str
     files: list[File]
 

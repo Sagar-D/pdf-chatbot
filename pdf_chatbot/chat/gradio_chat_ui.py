@@ -4,6 +4,7 @@ import pdf_chatbot.config as config
 from pdf_chatbot.chat.chat_handler import smart_chat
 from pdf_chatbot.errors.base import PDFChatbotError
 from pdf_chatbot.db.repository import get_user
+from pdf_chatbot.schemas.agent import AgentConfig
 
 
 def _format_messages_to_gradio_chat(
@@ -31,7 +32,12 @@ def _format_messages_to_langchain(
 
 
 def _gradio_pre_processing(
-    state: dict, user: str, llm_platform: str, msg: str, chat_history: list[dict]
+    state: dict,
+    user: str,
+    llm_platform: str,
+    msg: str,
+    chat_history: list[dict],
+    q_enrich: bool,
 ):
     state = state or {}
     if msg:
@@ -40,6 +46,7 @@ def _gradio_pre_processing(
         state["user"] = user
     state["chat_history"] = chat_history or []
     state["llm_platform"] = llm_platform or config.DEFAULT_LLM_PLATFORM
+    state["query_enrichment_enabled"] = q_enrich
     state.pop("error", None)
 
     return (
@@ -52,36 +59,43 @@ def _gradio_pre_processing(
         ),
         gr.update(interactive=False),
         gr.update(interactive=False),
+        gr.update(interactive=False),
     )
+
+
+async def warn_and_return(gr_state: dict, msg: str):
+    gr.Warning(msg)
+    gr_state["error"] = "ERROR"
+    return gr_state, gr_state["chat_history"]
 
 
 async def gradio_chat(state: dict, files: list[bytes] | None = None):
 
     if (not state.get("input")) or state.get("input").strip() == "":
-        gr.Warning("Please enter a User query in the input box")
-        state["error"] = "INVALID_PARAMS"
-        return state, state["chat_history"]
+        return warn_and_return(state, "Please enter a User query in the input box")
     if (not state.get("user")) or state.get("user").strip() == "":
-        gr.Warning("Please select a valid username from the dropdown.")
-        state["error"] = "INVALID_PARAMS"
-        return state, state["chat_history"]
+        return warn_and_return(
+            state, "Please select a valid username from the dropdown."
+        )
 
     user_obj = get_user(username=state["user"])
     if not user_obj:
-        gr.Warning("Unaotherised User. Selected user doesn't have valid access.")
-        state["error"] = "UNAUTHORIZED"
-        return state, state["chat_history"]
+        return warn_and_return(
+            state, "Unaotherised User. Selected user doesn't have valid access."
+        )
     chat_session = {
         "user_id": user_obj["user_id"],
         "chat_history": _format_messages_to_langchain(state["chat_history"]),
-        "llm_platform": state["llm_platform"],
     }
     try:
         state["chat_history"] = await smart_chat(
             chat_session,
             input=state["input"],
             files=files,
-            llm_platform=chat_session["llm_platform"],
+            agent_config=AgentConfig(
+                llm_platform=state["llm_platform"],
+                query_enrichment_enabled=state["query_enrichment_enabled"],
+            ),
         )
     except PDFChatbotError as e:
         gr.Warning(str(e))
@@ -103,6 +117,7 @@ def _gradio_post_processing(state: dict):
         ),
         gr.update(interactive=True),
         gr.update(interactive=True),
+        gr.update(interactive=True),
     )
 
 
@@ -117,8 +132,14 @@ def create_gradio_chat_interface():
 
     with gr.Blocks() as app:
 
-        state = gr.State({})
-        chatbot = gr.Chatbot(height=450, scale=10)
+        gr_state = gr.State({})
+        with gr.Row():
+            chatbot = gr.Chatbot(height=450, scale=10)
+            with gr.Column():
+                with gr.Row():
+                    chat_mode = gr.Markdown(value="RAG Agent Configs / Feature flags")
+                with gr.Row():
+                    q_enrich = gr.Checkbox(value=True, label="Enable Query Enrichment")
 
         with gr.Row():
             chat_mode = gr.Markdown(
@@ -155,31 +176,31 @@ def create_gradio_chat_interface():
 
         files.change(
             fn=_hadle_chat_mode_label,
-            inputs=[
-                files,
-            ],
-            outputs=[
-                chat_mode,
-            ],
+            inputs=[files],
+            outputs=[chat_mode],
         )
 
         send.click(
             fn=_gradio_pre_processing,
-            inputs=[state, user, llm_platform, msg, chatbot],
-            outputs=[state, llm_platform, msg, user, send],
-        ).then(fn=gradio_chat, inputs=[state, files], outputs=[state, chatbot]).then(
+            inputs=[gr_state, user, llm_platform, msg, chatbot, q_enrich],
+            outputs=[gr_state, llm_platform, msg, user, send],
+        ).then(
+            fn=gradio_chat, inputs=[gr_state, files], outputs=[gr_state, chatbot]
+        ).then(
             fn=_gradio_post_processing,
-            inputs=[state],
-            outputs=[llm_platform, msg, user, send],
+            inputs=[gr_state],
+            outputs=[llm_platform, msg, user, send, q_enrich],
         )
         msg.submit(
             fn=_gradio_pre_processing,
-            inputs=[state, user, llm_platform, msg, chatbot],
-            outputs=[state, llm_platform, msg, user, send],
-        ).then(fn=gradio_chat, inputs=[state, files], outputs=[state, chatbot]).then(
+            inputs=[gr_state, user, llm_platform, msg, chatbot, q_enrich],
+            outputs=[gr_state, llm_platform, msg, user, send, q_enrich],
+        ).then(
+            fn=gradio_chat, inputs=[gr_state, files], outputs=[gr_state, chatbot]
+        ).then(
             fn=_gradio_post_processing,
-            inputs=[state],
-            outputs=[llm_platform, msg, user, send],
+            inputs=[gr_state],
+            outputs=[llm_platform, msg, user, send, q_enrich],
         )
 
     return app
