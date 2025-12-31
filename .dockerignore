@@ -1,0 +1,28 @@
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environments
+.venv/
+
+# Environment files
+.env
+.env.*
+*.env
+
+# Git
+.git
+.gitignore
+
+# IDE / Editor
+.vscode/
+
+# OS files
+.DS_Store
+
+# SQLite DB files
+*.db
+*.sqlite
+*.sqlite3

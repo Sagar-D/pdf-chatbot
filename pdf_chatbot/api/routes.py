@@ -1,14 +1,15 @@
 from fastapi import FastAPI, Header, Body, status, Depends
 from fastapi.exceptions import HTTPException
-from fastapi.encoders import jsonable_encoder
-from pdf_chatbot.user.account import create_account, authenticate_and_get_user
-from pdf_chatbot.user.session import session_manager
-from pdf_chatbot.chat.chat_handler import smart_chat
-from pydantic import UUID4, BaseModel
+from contextlib import asynccontextmanager
+from pydantic import UUID4
 from typing import Annotated
 import base64
 import binascii
 
+from pdf_chatbot.user.account import create_account, authenticate_and_get_user
+from pdf_chatbot.user.session import session_manager
+from pdf_chatbot.chat.chat_handler import smart_chat
+from pdf_chatbot.db import setup
 from pdf_chatbot.schemas.auth import LoginRequest, LoginResponse, LogoutResponse
 from pdf_chatbot.schemas.common import ErrorResponse, ErrorCode
 from pdf_chatbot.schemas.chat import ChatHistoryResponse, ChatRequest, ChatResponse
@@ -18,9 +19,16 @@ from pdf_chatbot.api.error_handlers import (
     document_error_handler,
     rag_agent_error_handler,
 )
-from pdf_chatbot import config
 
-app = FastAPI()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    setup.setup_chat_history()
+    setup.initialize_db()
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
 app.add_exception_handler(DocumentError, document_error_handler)
 app.add_exception_handler(RAGAgentError, rag_agent_error_handler)
 
