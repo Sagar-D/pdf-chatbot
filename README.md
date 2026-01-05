@@ -240,15 +240,15 @@ Limitations
  
 🧪 Future Improvements
 
-- * Decouple RAG and non-RAG execution paths *
+- **Decouple RAG and non-RAG execution paths:** 
   Separate RAG-specific workflows from general API flows, enabling RAG pipelines to run on GPU-enabled infrastructure while keeping lightweight API operations on CPU-only environments.
-- Asynchronous document ingestion
+- **Asynchronous document ingestion:** 
   Move document parsing, chunking, and embedding to asynchronous/background jobs so users can continue interacting with the system without blocking on ingestion.
-- Persistent vector storage across sessions
+- **Persistent vector storage across sessions:** 
   Persist embeddings beyond application restarts to support long-lived user sessions and reuse previously ingested documents.
-- Streaming response generation
+- **Streaming response generation:** 
   Enable token-level streaming from the LLM to improve perceived latency and user experience during long responses.
-- Observability and tracing for AI workflows
+- **Observability and tracing for AI workflows:** 
   Add end-to-end tracing, logging, and metrics for RAG pipelines using tools such as LangSmith or OpenTelemetry to improve debuggability and system insight.
 
 🙌 Author
